@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://react-ts.abecerraguz.com";
 const SITE_NAME = "React + TypeScript";
 const SITE_DESCRIPTION =
-  "Programa formativo React + TypeScript — 9 semanas desde fundamentos hasta testing y arquitectura de aplicaciones modernas.";
+  "Programa formativo React + TypeScript — 11 semanas desde fundamentos hasta testing y arquitectura de aplicaciones modernas.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),

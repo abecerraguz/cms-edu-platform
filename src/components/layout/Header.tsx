@@ -44,7 +44,7 @@ export default function Header({ onMenuClick }: Props) {
 
       <div className="flex items-center gap-2">
         <a
-          href="https://github.com/abecerraguz"
+          href="https://github.com/abecerraguz/blog-cms-fullstack"
           target="_blank"
           rel="noopener noreferrer"
           className="w-8 h-8 flex items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-100 dark:hover:bg-white/5 transition-colors"

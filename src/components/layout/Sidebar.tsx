@@ -51,7 +51,7 @@ export default function Sidebar({ isOpen = false, onClose }: Props) {
       {/* Semanas */}
       <div className="flex-1 p-3 overflow-y-auto">
         <p className="text-[11px] font-bold uppercase tracking-widest text-zinc-600 px-2 mb-2">
-          Programa · 9 semanas
+          Programa · 11 semanas
         </p>
         <ul className="space-y-0.5">
           {allSemanas.map((s) => {

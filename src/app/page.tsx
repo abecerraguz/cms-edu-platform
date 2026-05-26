@@ -16,7 +16,7 @@ export default function HomePage() {
           Programa · 2026
         </span>
         <h1 className="text-3xl font-bold text-zinc-900 dark:text-white mb-3">
-          React + TypeScript<br />9 semanas
+          React + TypeScript<br />11 semanas
         </h1>
         <p className="text-zinc-500 dark:text-zinc-400 text-base max-w-2xl leading-relaxed">
           Programa intensivo desde los fundamentos de TypeScript hasta el examen transversal.
