@@ -1,0 +1,369 @@
+---
+titulo: "Testing y buenas prácticas"
+descripcion: "Vitest y React Testing Library con TypeScript, mocks tipados y cobertura de código."
+duracion: "8h"
+semana: 10
+objetivos:
+  - "Configurar Vitest en un proyecto React + TypeScript con Vite"
+  - "Escribir tests unitarios para funciones y hooks con TypeScript"
+  - "Testear componentes React con React Testing Library tipado"
+  - "Crear mocks tipados de módulos, APIs y hooks"
+  - "Aplicar buenas prácticas de código TypeScript en proyectos React"
+recursos:
+  - nombre: "Vitest - Documentación"
+    url: "https://vitest.dev/"
+  - nombre: "React Testing Library"
+    url: "https://testing-library.com/docs/react-testing-library/intro/"
+---
+
+> **🎯 Objetivo de la semana:** Al terminar sabrás configurar Vitest en el proyecto CMS, escribir tests para componentes y hooks, crear mocks tipados de servicios y aplicar buenas prácticas TypeScript que eviten el `any` drift en proyectos reales.
+>
+> **🔑 Concepto clave:** El test como documentación — un test bien escrito describe el contrato de un componente: qué recibe, qué renderiza y cómo reacciona a las interacciones del usuario, sin acoplarse a detalles de implementación interna.
+>
+> **🛠 Tarea práctica:** Configurar Vitest en el CMS y escribir tests para `ArticuloCard`, el hook `useAdminPublicaciones` y el formulario de login del panel admin.
+>
+> **📋 Entregable:** `npm test` ejecuta al menos 10 tests que pasan. Los componentes y hooks clave del CMS tienen cobertura real de sus casos críticos.
+
+---
+
+## 1. Configuración de Vitest con TypeScript
+
+Vitest es Jest reescrito para el ecosistema de ESModules — misma API (`describe`, `it`, `expect`) pero integrado directamente con el pipeline de Vite. Con Jest necesitarías configurar Babel o `ts-jest` para transformar TypeScript, y los alias de ruta como `@/components/...` fallarían sin configuración adicional. Con Vitest, si el proyecto ya corre con Vite, los tests corren con la misma configuración sin trabajo extra.
+
+La instalación mínima para React + TypeScript:
+
+```typescript
+// vite.config.ts con Vitest configurado
+import { defineConfig } from "vitest/config";
+import react from "@vitejs/plugin-react";
+
+export default defineConfig({
+  plugins: [react()],
+  test: {
+    globals: true,
+    environment: "jsdom",
+    setupFiles: ["./src/test/setup.ts"],
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "html"],
+      exclude: ["node_modules/", "src/test/"],
+    },
+  },
+});
+```
+
+```typescript
+// src/test/setup.ts
+import "@testing-library/jest-dom";
+```
+
+## 2. Tests unitarios con TypeScript
+
+Los tests unitarios verifican piezas de lógica aisladas — funciones puras que reciben un input y retornan un output predecible sin efectos secundarios. Son los más rápidos de escribir, los primeros en fallar cuando algo se rompe y los más fáciles de debuggear porque no tienen dependencias externas.
+
+Vitest infiere los tipos automáticamente desde el valor que devuelve la función testeada — no necesitas `as Producto[]` en cada assertion. `vi.fn()` crea una función mock tipada que registra cada llamada con sus argumentos, permitiendo aserciones sobre cómo fue invocada:
+
+```typescript
+// Test de función pura tipada
+import { describe, it, expect } from "vitest";
+import { calcularTotal, aplicarDescuento } from "../utils/precio";
+
+describe("calcularTotal", () => {
+  it("suma los precios de todos los items", () => {
+    const items: ItemCarrito[] = [
+      { id: 1, nombre: "A", precio: 100, cantidad: 2 },
+      { id: 2, nombre: "B", precio: 50, cantidad: 1 },
+    ];
+    expect(calcularTotal(items)).toBe(250);
+  });
+
+  it("retorna 0 para un carrito vacío", () => {
+    expect(calcularTotal([])).toBe(0);
+  });
+});
+```
+
+## 3. Testing de componentes React
+
+Los tests de componentes verifican lo que el usuario ve y puede hacer, no los detalles de implementación. React Testing Library fuerza este enfoque por diseño: no expone el estado interno de React ni el árbol de componentes — solo lo que el DOM renderiza.
+
+Las queries de `screen` están ordenadas por prioridad de accesibilidad: `getByRole` > `getByLabelText` > `getByText`. Usar `getByRole("button", { name: /guardar/i })` significa que el test también verifica que el componente es accesible para lectores de pantalla. `userEvent` simula interacciones reales del usuario (click, escritura, tab) en lugar del `fireEvent` de bajo nivel:
+
+```tsx
+// Test de componente tipado
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, it, expect, vi } from "vitest";
+import Boton from "../components/Boton";
+
+describe("Boton", () => {
+  it("llama a onClick cuando se hace clic", async () => {
+    const user = userEvent.setup();
+    const handleClick = vi.fn();
+
+    render(<Boton label="Guardar" onClick={handleClick} />);
+
+    await user.click(screen.getByRole("button", { name: "Guardar" }));
+
+    expect(handleClick).toHaveBeenCalledTimes(1);
+  });
+
+  it("está deshabilitado cuando disabled=true", () => {
+    render(<Boton label="Guardar" onClick={vi.fn()} disabled />);
+    expect(screen.getByRole("button")).toBeDisabled();
+  });
+});
+```
+
+## 4. Mocks tipados
+
+En los tests de componentes que hacen peticiones HTTP, el problema es de aislamiento: no quieres que un test falle porque el servidor no está disponible, o que los resultados cambien dependiendo de los datos reales de la base de datos.
+
+`vi.mock("ruta/del/modulo")` intercepta todos los imports de ese módulo en el archivo de test y los reemplaza por funciones que no hacen nada por defecto. `vi.mocked()` es el type guard que convierte el import en su versión tipada de mock — sin él TypeScript no sabe que `.mockResolvedValue()` existe en el objeto. Esto da autocompletado completo al configurar el mock:
+
+```tsx
+// Mock de servicio tipado
+import { vi, describe, it, expect, beforeEach } from "vitest";
+import * as productosService from "../services/productosService";
+
+vi.mock("../services/productosService");
+const mockedGetProductos = vi.mocked(productosService.getProductos);
+
+describe("Productos component", () => {
+  beforeEach(() => {
+    mockedGetProductos.mockResolvedValue([
+      { id: 1, nombre: "Mock Producto", precio: 99 },
+    ]);
+  });
+
+  it("muestra los productos cargados", async () => {
+    render(<Productos />);
+    expect(await screen.findByText("Mock Producto")).toBeInTheDocument();
+  });
+});
+```
+
+## 5. Buenas prácticas TypeScript en React
+
+Al terminar una semana de tests es buen momento para auditar la calidad del código que los tests verifican. El error más común en proyectos React + TypeScript es el `any` drift: un `any` al principio "para avanzar rápido" se copia, se propaga y dos semanas después la mitad de los componentes tienen tipos implícitos que el compilador no puede verificar.
+
+La alternativa es `unknown` con type narrowing. `unknown` es tan flexible como `any` pero TypeScript te obliga a verificar el tipo antes de usarlo. El operador `satisfies` (TypeScript 4.9+) resuelve un caso distinto: valida que un objeto literal cumple una forma sin perder los tipos literales de sus valores:
+
+```typescript
+// satisfies operator (TypeScript 4.9+)
+const RUTAS = {
+  home: "/",
+  perfil: "/perfil",
+  admin: "/admin",
+} satisfies Record<string, string>;
+
+// type narrowing en lugar de any
+function procesarRespuesta(data: unknown): Producto {
+  if (
+    typeof data === "object" &&
+    data !== null &&
+    "id" in data &&
+    "nombre" in data
+  ) {
+    return data as Producto;
+  }
+  throw new Error("Respuesta inválida");
+}
+```
+
+---
+
+## Actividades prácticas
+
+**Actividad 1 — Tests unitarios (60 min)**
+Escribir tests para 3 funciones puras del proyecto (cálculos de precio, validaciones, formateo de datos). Alcanzar 100% de cobertura de ramas.
+
+**Actividad 2 — Tests de componentes (75 min)**
+Testear `FormularioLogin`: verificar que muestra errores de validación, que llama al servicio con los datos correctos y que redirige después del login exitoso.
+
+**Actividad 3 — Mock de API (60 min)**
+Mockear las llamadas HTTP usando `msw` (Mock Service Worker). Testear el componente `Productos` en estados de carga, datos y error.
+
+**Actividad 4 — Revisión de código (45 min)**
+Auditar el proyecto completo: eliminar todos los `any`, aplicar `strict` mode si no estaba activo, organizar tipos en archivos dedicados.
+
+---
+
+## 🛠 Proyecto CMS — Semana 8: Tests para el CMS
+
+Esta semana escribes los tests que verifican que el CMS funciona correctamente. No testarás todo — testarás lo que importa: los componentes más críticos y los flujos que el usuario realiza realmente.
+
+### Paso 1 — Configurar Vitest en el proyecto CMS
+
+```bash
+npm install -D vitest @testing-library/react @testing-library/user-event @testing-library/jest-dom jsdom
+```
+
+```typescript
+// vite.config.ts — añadir sección test
+export default defineConfig({
+  plugins: [react()],
+  test: {
+    globals: true,
+    environment: "jsdom",
+    setupFiles: ["./src/test/setup.ts"],
+  },
+});
+```
+
+### Paso 2 — Test de `ArticuloCard`
+
+El componente más reutilizado del CMS. Verifica que renderiza correctamente con un artículo real:
+
+```tsx
+// src/components/__tests__/ArticuloCard.test.tsx
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, it, expect, vi } from "vitest";
+import { ArticuloCard } from "../ArticuloCard";
+import { ARTICULOS_MOCK } from "@/data/mockData";
+
+const articulo = ARTICULOS_MOCK[0];
+
+describe("ArticuloCard", () => {
+  it("muestra el título del artículo", () => {
+    render(<ArticuloCard articulo={articulo} />);
+    expect(screen.getByText(articulo.titulo)).toBeInTheDocument();
+  });
+
+  it("muestra el badge de categoría", () => {
+    render(<ArticuloCard articulo={articulo} />);
+    expect(screen.getByText(articulo.categoria.nombre)).toBeInTheDocument();
+  });
+
+  it("llama a onClick con el slug cuando se hace clic en el botón", async () => {
+    const user = userEvent.setup();
+    const handleClick = vi.fn();
+    render(<ArticuloCard articulo={articulo} onClick={handleClick} />);
+
+    await user.click(screen.getByRole("button", { name: /ver artículo/i }));
+
+    expect(handleClick).toHaveBeenCalledWith(articulo.slug);
+  });
+
+  it("muestra el tiempo de lectura", () => {
+    render(<ArticuloCard articulo={articulo} />);
+    expect(screen.getByText(new RegExp(`${articulo.tiempoLectura} min`))).toBeInTheDocument();
+  });
+});
+```
+
+### Paso 3 — Test del hook `useAdminPublicaciones`
+
+```tsx
+// src/hooks/__tests__/useAdminPublicaciones.test.ts
+import { renderHook, act } from "@testing-library/react";
+import { describe, it, expect } from "vitest";
+import { useAdminPublicaciones } from "../useAdminPublicaciones";
+import { ARTICULOS_MOCK } from "@/data/mockData";
+
+describe("useAdminPublicaciones", () => {
+  it("devuelve todos los artículos cuando la búsqueda está vacía", () => {
+    const { result } = renderHook(() => useAdminPublicaciones());
+    expect(result.current.articulos.length).toBe(ARTICULOS_MOCK.length);
+  });
+
+  it("filtra artículos por título", () => {
+    const { result } = renderHook(() => useAdminPublicaciones());
+
+    act(() => {
+      result.current.buscar("Angewomon");
+    });
+
+    expect(result.current.articulos.length).toBe(1);
+    expect(result.current.articulos[0].titulo).toMatch(/Angewomon/i);
+  });
+
+  it("filtra artículos por nombre de categoría", () => {
+    const { result } = renderHook(() => useAdminPublicaciones());
+
+    act(() => {
+      result.current.buscar("Tecnología");
+    });
+
+    result.current.articulos.forEach((a) => {
+      expect(a.categoria.nombre).toMatch(/Tecnología/i);
+    });
+  });
+
+  it("devuelve todos los artículos al limpiar la búsqueda", () => {
+    const { result } = renderHook(() => useAdminPublicaciones());
+
+    act(() => { result.current.buscar("algo inexistente"); });
+    act(() => { result.current.buscar(""); });
+
+    expect(result.current.articulos.length).toBe(ARTICULOS_MOCK.length);
+  });
+
+  it("totalFiltrados coincide con la longitud del array", () => {
+    const { result } = renderHook(() => useAdminPublicaciones());
+
+    act(() => { result.current.buscar("Angewomon"); });
+
+    expect(result.current.totalFiltrados).toBe(result.current.articulos.length);
+  });
+});
+```
+
+### Paso 4 — Test del formulario de login
+
+```tsx
+// src/pages/admin/__tests__/AdminLogin.test.tsx
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, it, expect, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
+import { AdminLogin } from "../AdminLogin";
+
+// Mock del contexto de autenticación
+const mockLogin = vi.fn();
+vi.mock("@/context/AuthContext", () => ({
+  useAuth: () => ({ login: mockLogin, isAuthenticated: false }),
+}));
+
+describe("AdminLogin", () => {
+  it("muestra error con credenciales incorrectas", async () => {
+    const user = userEvent.setup();
+    mockLogin.mockResolvedValue(false);
+
+    render(<MemoryRouter><AdminLogin /></MemoryRouter>);
+
+    await user.type(screen.getByPlaceholderText("Email"), "malo@ejemplo.com");
+    await user.type(screen.getByPlaceholderText("Contraseña"), "wrong");
+    await user.click(screen.getByRole("button", { name: /iniciar sesión/i }));
+
+    expect(await screen.findByText(/credenciales incorrectas/i)).toBeInTheDocument();
+  });
+
+  it("no muestra error con credenciales correctas", async () => {
+    const user = userEvent.setup();
+    mockLogin.mockResolvedValue(true);
+
+    render(<MemoryRouter><AdminLogin /></MemoryRouter>);
+
+    await user.type(screen.getByPlaceholderText("Email"), "admin@blog.com");
+    await user.type(screen.getByPlaceholderText("Contraseña"), "admin123");
+    await user.click(screen.getByRole("button", { name: /iniciar sesión/i }));
+
+    expect(screen.queryByText(/credenciales incorrectas/i)).not.toBeInTheDocument();
+  });
+});
+```
+
+> **Semana 9**: El CMS está completo. Para el examen transversal integrarás todo lo construido semana a semana en un proyecto final funcionando, con tests, y lo presentarás defendiendo tus decisiones de arquitectura.
+
+---
+
+## 📋 Entregable de la semana
+
+Para considerar completada la Semana 8, tu suite de tests debe demostrar:
+
+- [ ] **Vitest configurado**: `npm test` corre sin configuración adicional. El comando `npm run coverage` genera un reporte HTML en `coverage/`.
+- [ ] **Mínimo 10 tests pasando**: Cubriendo al menos `ArticuloCard` (render + click), `useAdminPublicaciones` (filtrado en tiempo real), `AdminLogin` (credenciales correctas e incorrectas) y `NuevoArticulo` (validación del formulario).
+- [ ] **Al menos 1 test con mock de servicio**: Un test que usa `vi.mock` para aislar el componente de la API real.
+- [ ] **Audit de tipos aprobado**: `npm run build` compila sin errores. No hay `any` en el código del proyecto. Al menos un uso de `unknown` con type narrowing en el manejo de errores.

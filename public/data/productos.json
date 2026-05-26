@@ -1,0 +1,22 @@
+[
+  { "id": 1,  "nombre": "Camiseta Básica",       "precio": 12990, "categoria": "ropa",        "stock": 120, "fechaIngreso": "2024-01-15" },
+  { "id": 2,  "nombre": "Pantalón Cargo",         "precio": 34990, "categoria": "ropa",        "stock": 45,  "fechaIngreso": "2024-02-03" },
+  { "id": 3,  "nombre": "Zapatilla Running",       "precio": 59990, "categoria": "calzado",     "stock": 30,  "fechaIngreso": "2024-01-20" },
+  { "id": 4,  "nombre": "Bota Cuero",             "precio": 89990, "categoria": "calzado",     "stock": 12,  "fechaIngreso": "2024-03-10" },
+  { "id": 5,  "nombre": "Mochila Urbana",         "precio": 27990, "categoria": "accesorios",  "stock": 0,   "fechaIngreso": "2024-02-28" },
+  { "id": 6,  "nombre": "Cinturón de Cuero",      "precio": 9990,  "categoria": "accesorios",  "stock": 85,  "fechaIngreso": "2024-01-05" },
+  { "id": 7,  "nombre": "Vestido Verano",         "precio": 22990, "categoria": "ropa",        "stock": 55,  "fechaIngreso": "2024-03-01" },
+  { "id": 8,  "nombre": "Gorra Deportiva",        "precio": 7990,  "categoria": "accesorios",  "stock": 200, "fechaIngreso": "2024-01-30" },
+  { "id": 9,  "nombre": "Chaqueta Impermeable",   "precio": 74990, "categoria": "ropa",        "stock": 18,  "fechaIngreso": "2024-02-14" },
+  { "id": 10, "nombre": "Calcetines Pack x5",     "precio": 4990,  "categoria": "ropa",        "stock": 300, "fechaIngreso": "2024-01-10" },
+  { "id": 11, "nombre": "Zapatilla Skate",        "precio": 44990, "categoria": "calzado",     "stock": 22,  "fechaIngreso": "2024-02-20" },
+  { "id": 12, "nombre": "Bolso Bandolera",        "precio": 19990, "categoria": "accesorios",  "stock": 0,   "fechaIngreso": "2024-03-05" },
+  { "id": 13, "nombre": "Polo Estampado",         "precio": 15990, "categoria": "ropa",        "stock": 90,  "fechaIngreso": "2024-02-08" },
+  { "id": 14, "nombre": "Sandalia Plana",         "precio": 18990, "categoria": "calzado",     "stock": 40,  "fechaIngreso": "2024-03-15" },
+  { "id": 15, "nombre": "Reloj Casual",           "precio": 39990, "categoria": "accesorios",  "stock": 15,  "fechaIngreso": "2024-01-25" },
+  { "id": 16, "nombre": "Short Deportivo",        "precio": 11990, "categoria": "ropa",        "stock": 75,  "fechaIngreso": "2024-02-18" },
+  { "id": 17, "nombre": "Botín Tacón",            "precio": 64990, "categoria": "calzado",     "stock": 8,   "fechaIngreso": "2024-03-20" },
+  { "id": 18, "nombre": "Bufanda Lana",           "precio": 8990,  "categoria": "accesorios",  "stock": 60,  "fechaIngreso": "2024-01-12" },
+  { "id": 19, "nombre": "Jeans Slim Fit",         "precio": 29990, "categoria": "ropa",        "stock": 0,   "fechaIngreso": "2024-02-25" },
+  { "id": 20, "nombre": "Sneaker Urbana",         "precio": 54990, "categoria": "calzado",     "stock": 25,  "fechaIngreso": "2024-03-08" }
+]

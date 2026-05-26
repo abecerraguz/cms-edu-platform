@@ -1,0 +1,520 @@
+---
+titulo: "Gestión de estado global"
+descripcion: "useReducer tipado, Redux Toolkit con TypeScript y Zustand como alternativa moderna."
+duracion: "8h"
+semana: 5
+objetivos:
+  - "Implementar useReducer con acciones y estado completamente tipados"
+  - "Configurar Redux Toolkit en un proyecto React + TypeScript"
+  - "Crear slices, selectors y thunks tipados con Redux Toolkit"
+  - "Implementar Zustand como alternativa ligera con tipos inferidos"
+  - "Decidir qué solución de estado usar según la complejidad del proyecto"
+recursos:
+  - nombre: "Redux Toolkit - TypeScript Quick Start"
+    url: "https://redux-toolkit.js.org/tutorials/typescript"
+  - nombre: "Zustand - TypeScript Guide"
+    url: "https://docs.pmnd.rs/zustand/guides/typescript"
+---
+
+> **🎯 Objetivo de la semana:** Al terminar sabrás gestionar estado complejo con `useReducer`, configurar un store Zustand para el panel admin y levantar el servidor Express base que alimentará el CMS en las semanas siguientes.
+>
+> **🔑 Concepto clave:** Elegir la herramienta de estado correcta — `useState` para estado local simple, `useReducer` para lógica compleja en un componente, Zustand para estado compartido entre múltiples componentes sin el boilerplate de Redux.
+>
+> **🛠 Tarea práctica:** Crear el store Zustand del panel admin con búsqueda + CRUD, y levantar el servidor Express base con las rutas `/api/articulos` devolviendo los datos del mock.
+>
+> **📋 Entregable:** El panel admin filtra y elimina artículos desde el store Zustand. El servidor Express responde en `http://localhost:3001/api/articulos`. Los dos procesos corren en paralelo.
+
+---
+
+## 1. useReducer con TypeScript
+
+`useState` funciona perfectamente para estados simples: un booleano, un string, un número. El problema aparece cuando el estado crece. Imagina el formulario de edición de un artículo: título, extracto, contenido, categoría, estado, imagen, tags. Con `useState` tienes ocho setters sueltos y actualizar varios a la vez requiere llamadas encadenadas. Cuando la lógica de actualización se comparte entre varios handlers, la empiezas a repetir.
+
+`useReducer` centraliza toda la lógica de actualización en una sola función — el reducer. El componente despacha **acciones** con nombre descriptivo; el reducer decide cómo cambia el estado.
+
+Las **discriminated unions** de TypeScript hacen que los reducers sean completamente type-safe: el compilador infiere el tipo del `payload` según el `type` de la acción:
+
+```tsx
+// Las acciones como discriminated union — TypeScript infiere el payload de cada tipo
+type CarritoAction =
+  | { type: "AGREGAR"; payload: ItemCarrito }
+  | { type: "ELIMINAR"; payload: number }   // payload es number
+  | { type: "LIMPIAR" };                    // sin payload
+
+function carritoReducer(state: CarritoState, action: CarritoAction): CarritoState {
+  switch (action.type) {
+    case "AGREGAR":
+      return { ...state, items: [...state.items, action.payload] };
+    case "ELIMINAR":
+      // TypeScript sabe que action.payload es number en este case
+      return { ...state, items: state.items.filter((i) => i.id !== action.payload) };
+    case "LIMPIAR":
+      return { items: [], total: 0 };
+    default: {
+      // El tipo never verifica que todos los casos están cubiertos
+      const _exhaustivo: never = action;
+      return _exhaustivo;
+    }
+  }
+}
+```
+
+El `default: never` es el truco para verificar exhaustividad: si añades una acción nueva al union type sin actualizar el reducer, TypeScript lanza un error de compilación en el `default`. Es tu red de seguridad cuando el proyecto crece.
+
+## 2. Redux Toolkit: referencia de industria
+
+En proyectos con equipos grandes, Redux Toolkit (RTK) es el estándar porque sus reglas generan un patrón predecible que todos siguen. No es más simple que Zustand — es más estructurado. El concepto central es el **slice**: estado + reducers + action creators en un solo objeto. `createAsyncThunk` añade operaciones asíncronas con los tres estados (`pending` / `fulfilled` / `rejected`) generados automáticamente:
+
+```tsx
+// slice + thunk: estado, reducers y petición asíncrona en un lugar
+const articulosSlice = createSlice({
+  name: "articulos",
+  initialState: { items: [] as ArticuloListado[], cargando: false },
+  reducers: {},
+  extraReducers: (builder) => {
+    builder
+      .addCase(fetchArticulos.pending,   (state) => { state.cargando = true; })
+      .addCase(fetchArticulos.fulfilled, (state, { payload }) => {
+        state.cargando = false;
+        state.items = payload; // payload tipado como ArticuloListado[]
+      });
+  },
+});
+
+// Hooks tipados — definidos una vez, usados en toda la app sin repetir tipos
+export const useAppSelector: TypedUseSelectorHook<RootState> = useSelector;
+export const useAppDispatch = () => useDispatch<AppDispatch>();
+```
+
+Para el CMS del programa usarás **Zustand** — menor boilerplate para un proyecto de equipo pequeño. Redux Toolkit es la elección cuando la app escala a decenas de slices y múltiples desarrolladores.
+
+## 4. Zustand como alternativa ligera
+
+Si Redux es una fábrica con protocolos estrictos, Zustand es un taller con reglas simples. Sin boilerplate de actions/reducers, sin providers que envuelvan la app, sin hooks tipados manualmente. El store es un objeto con estado y acciones en el mismo lugar:
+
+```tsx
+// Todo en un objeto — estado + acciones, sin boilerplate
+const useCarritoStore = create<CarritoStore>((set, get) => ({
+  items: [],
+  total: 0,
+  agregar: (item) => set((state) => ({
+    items: [...state.items, item],
+    total: state.total + item.precio,
+  })),
+  eliminar: (id) => set((state) => ({
+    items: state.items.filter((i) => i.id !== id),
+  })),
+  limpiar: () => set({ items: [], total: 0 }),
+}));
+
+// El selector granular evita re-renders innecesarios
+function ContadorCarrito() {
+  // Solo re-renderiza cuando total cambia, no cuando cambia items
+  const total = useCarritoStore((state) => state.total);
+  const limpiar = useCarritoStore((state) => state.limpiar);
+  return <button onClick={limpiar}>Vaciar ({total})</button>;
+}
+```
+
+**¿Cuándo usar qué?** Esta es la guía práctica:
+
+| Escenario | Solución recomendada |
+|-----------|---------------------|
+| Estado local del componente (toggle, input) | `useState` |
+| Estado local complejo con múltiples acciones | `useReducer` |
+| Estado global liviano (tema, auth) | `Context + useReducer` |
+| Estado global con múltiples consumidores | **Zustand** |
+| App enterprise con equipos grandes y debug avanzado | Redux Toolkit |
+
+---
+
+## Actividades prácticas
+
+**Actividad 1 — Carrito con useReducer (60 min)**
+Implementar un carrito de compras completo con `useReducer`. Acciones: agregar, eliminar, cambiar cantidad, limpiar. Calcular total con `useMemo`.
+
+**Actividad 2 — Redux Toolkit: CRUD (90 min)**
+Crear un store con un slice de `tareas`. Implementar un thunk para cargar tareas desde una API mock. Conectar a componentes con `useAppSelector` y `useAppDispatch`.
+
+**Actividad 3 — Zustand: refactor (45 min)**
+Migrar el carrito de la Actividad 1 a Zustand. Comparar la cantidad de boilerplate y la experiencia de desarrollo.
+
+---
+
+## 🛠 Proyecto CMS — Semana 5: Estado global del panel admin
+
+El panel admin del CMS maneja una tabla de artículos con búsqueda, filtros por estado y acciones CRUD. Esto tiene demasiado estado interrelacionado para `useState` sueltos — es el caso de uso perfecto para `useReducer` o Zustand.
+
+### Paso 1 — Store de artículos con Zustand
+
+Instala Zustand y crea el store del panel admin:
+
+```bash
+npm install zustand
+```
+
+```tsx
+// src/store/articulosStore.ts
+import { create } from "zustand";
+import type { Articulo, ArticuloListado, EstadoArticulo } from "@/types";
+import { ARTICULOS_MOCK } from "@/data/mockData";
+
+interface FiltrosAdmin {
+  busqueda: string;
+  estado: EstadoArticulo | "todos";
+  pagina: number;
+}
+
+interface ArticulosState {
+  articulos: ArticuloListado[];
+  filtros: FiltrosAdmin;
+  cargando: boolean;
+  // Acciones
+  setBusqueda: (texto: string) => void;
+  setEstado: (estado: EstadoArticulo | "todos") => void;
+  eliminarArticulo: (id: number) => void;
+  toggleEstado: (id: number) => void;
+}
+
+export const useArticulosStore = create<ArticulosState>((set) => ({
+  articulos: ARTICULOS_MOCK.map(({ id, titulo, slug, categoria, estado, fechaPublicacion }) => ({
+    id, titulo, slug, categoria, estado, fechaPublicacion,
+  })),
+  filtros: { busqueda: "", estado: "todos", pagina: 1 },
+  cargando: false,
+
+  setBusqueda: (busqueda) =>
+    set((s) => ({ filtros: { ...s.filtros, busqueda, pagina: 1 } })),
+
+  setEstado: (estado) =>
+    set((s) => ({ filtros: { ...s.filtros, estado, pagina: 1 } })),
+
+  eliminarArticulo: (id) =>
+    set((s) => ({ articulos: s.articulos.filter((a) => a.id !== id) })),
+
+  toggleEstado: (id) =>
+    set((s) => ({
+      articulos: s.articulos.map((a) =>
+        a.id === id
+          ? { ...a, estado: a.estado === "publicado" ? "borrador" : "publicado" }
+          : a
+      ),
+    })),
+}));
+```
+
+### Paso 2 — Selector derivado para artículos filtrados
+
+```tsx
+// src/hooks/useArticulosFiltrados.ts
+import { useMemo } from "react";
+import { useArticulosStore } from "@/store/articulosStore";
+
+export function useArticulosFiltrados() {
+  const { articulos, filtros } = useArticulosStore();
+
+  return useMemo(() => {
+    return articulos.filter((a) => {
+      const coincideBusqueda = a.titulo
+        .toLowerCase()
+        .includes(filtros.busqueda.toLowerCase());
+      const coincideEstado =
+        filtros.estado === "todos" || a.estado === filtros.estado;
+      return coincideBusqueda && coincideEstado;
+    });
+  }, [articulos, filtros]);
+}
+```
+
+### Paso 3 — Tabla del panel admin
+
+Crea `src/pages/admin/ArticulosAdmin.tsx` replicando la tabla de `admin_listado.html`:
+
+```tsx
+// src/pages/admin/ArticulosAdmin.tsx
+import { useArticulosStore } from "@/store/articulosStore";
+import { useArticulosFiltrados } from "@/hooks/useArticulosFiltrados";
+
+export function ArticulosAdmin() {
+  const { filtros, setBusqueda, setEstado, eliminarArticulo, toggleEstado } =
+    useArticulosStore();
+  const articulosFiltrados = useArticulosFiltrados();
+
+  return (
+    <div className="admin-panel">
+      <header className="admin-header">
+                <div className="admin-header__info">
+                  <h1><i className="bi bi-grid-1x2" /> Publicaciones</h1>
+                  <p>Gestiona el contenido de tu blog.</p>
+                </div>
+                <a href="/admin/nuevo" className="btn btn--success">
+                  <i className="bi bi-plus-circle" /> Nueva publicación
+                </a>
+              </header>
+
+      {/* Filtros */}
+      <div className="filters">
+        <input
+          type="search"
+          value={filtros.busqueda}
+          onChange={(e) => setBusqueda(e.target.value)}
+          placeholder="Buscar artículos..."
+        />
+        <select
+          value={filtros.estado}
+          onChange={(e) => setEstado(e.target.value as typeof filtros.estado)}
+        >
+          <option value="todos">Todos</option>
+          <option value="publicado">Publicados</option>
+          <option value="borrador">Borradores</option>
+        </select>
+      </div>
+
+      {/* Tabla */}
+      <table className="admin-table">
+        <thead>
+          <tr>
+            <th>Título</th><th>Categoría</th><th>Estado</th><th>Fecha</th><th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          {articulosFiltrados.map((a) => (
+            <tr key={a.id}>
+              <td>{a.titulo}</td>
+              <td>{a.categoria.nombre}</td>
+              <td>
+                <button onClick={() => toggleEstado(a.id)}>
+                  {a.estado === "publicado" ? "🟢 Publicado" : "⚪ Borrador"}
+                </button>
+              </td>
+              <td>{a.fechaPublicacion}</td>
+              <td>
+                <a href={`/admin/editar/${a.id}`}>Editar</a>
+                <button onClick={() => eliminarArticulo(a.id)}>Eliminar</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+```
+
+### Paso 4 — Arquitectura del proyecto: monorepo `react-cms/`
+
+Hasta ahora el frontend vive en `cms-blog/` — una carpeta independiente. A partir de esta semana el proyecto tiene **dos partes que deben correr en paralelo**: el frontend React y el servidor Express. El momento de añadir el backend es también el momento de organizar el proyecto de forma definitiva.
+
+La estructura final se llama **monorepo**: un único repositorio con dos subproyectos dentro. Así es como quedará el proyecto al terminar el programa:
+
+```
+react-cms/                 ← carpeta raíz del proyecto completo
+├── frontend/              ← la app Vite + React (antes llamada cms-blog/)
+│   ├── src/
+│   ├── public/
+│   ├── package.json       ← dependencias del frontend
+│   └── vite.config.ts
+├── backend/               ← el servidor Express + PostgreSQL
+│   ├── src/
+│   ├── package.json       ← dependencias del backend
+│   └── tsconfig.json
+├── package.json           ← raíz: scripts para arrancar ambos a la vez
+├── package-lock.json
+└── .gitignore
+```
+
+**¿Por qué esta estructura y no dos carpetas separadas?**
+- Un solo `git init` — todo el proyecto vive en un repositorio.
+- Un solo `.gitignore` raíz que protege ambos `node_modules/` y los `.env`.
+- Un único comando desde la raíz (`npm run dev`) arranca el frontend y el backend en paralelo.
+- En producción o entrevistas, clonas el repo y con `npm install && npm run dev` tienes todo funcionando.
+
+#### Paso 4a — Renombrar cms-blog a frontend
+
+Antes de crear el backend, renombra la carpeta del frontend para que coincida con la arquitectura final:
+
+```bash
+# Ejecuta esto desde el nivel donde está cms-blog/
+mv cms-blog react-cms
+cd react-cms
+mv . frontend   # esto no funciona directo — usa el explorador de VS Code
+# Forma más segura: arrastrar la carpeta cms-blog dentro de react-cms/frontend en VS Code
+```
+
+La forma más sencilla en VS Code: crea la carpeta `react-cms/` a mano, luego arrastra `cms-blog/` dentro y renómbrala a `frontend`. El proyecto Vite no necesita saber el nombre de la carpeta contenedora — `npm run dev` dentro de `frontend/` sigue funcionando igual.
+
+#### Paso 4b — Crear el backend dentro de react-cms/
+
+```bash
+# Desde react-cms/
+mkdir backend && cd backend
+npm init -y
+npm install express cors dotenv
+npm install -D typescript @types/express @types/node ts-node-dev
+npx tsc --init
+```
+
+Estructura del backend:
+
+```
+backend/
+├── src/
+│   ├── data/
+│   │   └── mockData.ts     ← copia los tipos y ARTICULOS_MOCK del frontend
+│   ├── routes/
+│   │   └── articulos.ts    ← GET /api/articulos, GET /api/articulos/:slug
+│   └── app.ts
+├── .env
+└── package.json
+```
+
+```typescript
+// backend/src/app.ts
+import express from "express";
+import cors from "cors";
+import "dotenv/config";
+import articulosRouter from "./routes/articulos";
+
+const app = express();
+const PORT = process.env.PORT ?? 3001;
+
+// Solo acepta peticiones del frontend React en desarrollo
+app.use(cors({ origin: process.env.FRONTEND_URL ?? "http://localhost:5173" }));
+app.use(express.json());
+app.use("/api/articulos", articulosRouter);
+
+app.listen(PORT, () =>
+  console.log(`✅ Servidor CMS en http://localhost:${PORT}`)
+);
+```
+
+```typescript
+// backend/src/routes/articulos.ts
+// Semana 5: devuelve mock en memoria. Semana 7: este archivo consulta PostgreSQL
+import { Router } from "express";
+import { ARTICULOS_MOCK } from "../data/mockData";
+
+const router = Router();
+
+router.get("/", (req, res) => {
+  const { estado, busqueda } = req.query;
+  let resultados = [...ARTICULOS_MOCK];
+  if (estado && estado !== "todos")
+    resultados = resultados.filter((a) => a.estado === estado);
+  if (busqueda && typeof busqueda === "string")
+    resultados = resultados.filter((a) =>
+      a.titulo.toLowerCase().includes(busqueda.toLowerCase())
+    );
+  res.json({ data: resultados, status: 200 });
+});
+
+router.get("/:slug", (req, res) => {
+  const articulo = ARTICULOS_MOCK.find((a) => a.slug === req.params.slug);
+  if (!articulo) return res.status(404).json({ error: "No encontrado" });
+  res.json({ data: articulo, status: 200 });
+});
+
+export default router;
+```
+
+```json
+// backend/package.json — scripts del servidor
+{
+  "scripts": {
+    "dev": "ts-node-dev --respawn --transpile-only src/app.ts",
+    "build": "tsc"
+  }
+}
+```
+
+#### Paso 4c — Package.json raíz con concurrently
+
+El `package.json` en la raíz de `react-cms/` no instala dependencias del proyecto — solo tiene el script que arranca ambos procesos en paralelo usando `concurrently`:
+
+```bash
+# Desde react-cms/ (la raíz del monorepo)
+npm init -y
+npm install -D concurrently
+```
+
+```json
+// react-cms/package.json
+{
+  "name": "react-cms",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CMS Blog — Frontend (Vite + React) + Backend (Express + PostgreSQL)",
+  "scripts": {
+    "dev": "concurrently -n frontend,backend -c cyan,yellow \"npm run dev --prefix frontend\" \"npm run dev --prefix backend\"",
+    "build": "npm run build --prefix frontend",
+    "test": "npm test --prefix frontend",
+    "install:all": "npm install --prefix frontend && npm install --prefix backend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0"
+  }
+}
+```
+
+El flag `-n frontend,backend` etiqueta cada proceso con su nombre en la terminal. `-c cyan,yellow` les da un color diferente para distinguirlos visualmente.
+
+#### Paso 4d — Variables de entorno
+
+Crea el `.env` dentro de `frontend/`:
+
+```env
+# frontend/.env
+VITE_API_URL=http://localhost:3001
+```
+
+Crea el `.env` dentro de `backend/`:
+
+```env
+# backend/.env
+PORT=3001
+FRONTEND_URL=http://localhost:5173
+```
+
+Y el `.gitignore` raíz que protege ambos:
+
+```gitignore
+# react-cms/.gitignore
+node_modules/
+frontend/node_modules/
+backend/node_modules/
+frontend/.env
+backend/.env
+frontend/dist/
+```
+
+#### Arrancar el proyecto completo
+
+Desde la raíz `react-cms/` un único comando:
+
+```bash
+npm run dev
+```
+
+Verás dos streams en la misma terminal:
+
+```
+[frontend] VITE v5.x.x  ready in 300ms
+[frontend] ➜  Local: http://localhost:5173/
+[backend]  ✅ Servidor CMS en http://localhost:3001
+```
+
+> **Para la próxima semana**: En la Semana 6 configurarás React Router con URLs reales **y** conectarás el frontend al servidor Express — los datos del blog vendrán de la API, no del mock. El comando `npm run dev` desde la raíz sigue siendo el mismo.
+
+---
+
+## 📋 Entregable de la semana
+
+Para considerar completada la Semana 5, debes demostrar:
+
+- [ ] **Store Zustand activo**: El store `useArticulosStore` está configurado. Los componentes leen del store, no de imports directos de `mockData`.
+- [ ] **Búsqueda funcional**: El input del panel admin filtra la tabla en tiempo real — escribir "Angewomon" muestra solo ese artículo.
+- [ ] **Eliminar sin recarga**: Click en eliminar remueve el artículo de la tabla instantáneamente.
+- [ ] **Toggle publicado/borrador**: Click en el estado de un artículo alterna entre publicado y borrador de forma inmediata.
+- [ ] **Servidor Express arranca**: `npm run dev` desde la raíz `react-cms/` inicia el frontend y el backend en paralelo. `GET http://localhost:3001/api/articulos` responde con el array de artículos en JSON.
+- [ ] **Estructura monorepo creada**: El proyecto tiene la carpeta raíz `react-cms/` con `frontend/` (el proyecto Vite) y `backend/` (el servidor Express) dentro. El `package.json` raíz tiene el script `dev` con `concurrently`.
+- [ ] **Sin errores TypeScript**: `npm run build` del frontend compila sin errores.

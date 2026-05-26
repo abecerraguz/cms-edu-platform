@@ -1,0 +1,339 @@
+---
+titulo: "Consumo de APIs y datos asíncronos"
+descripcion: "Fetch y Axios tipados, TanStack Query, manejo de errores y tipado de respuestas de API."
+duracion: "8h"
+semana: 7
+objetivos:
+  - "Realizar peticiones HTTP tipadas con Fetch API nativo"
+  - "Configurar Axios con interceptores y tipos genéricos"
+  - "Usar TanStack Query (React Query) para sincronizar estado del servidor"
+  - "Manejar errores de API de forma tipada y escalable"
+  - "Crear una capa de servicios tipada que abstraiga las llamadas HTTP"
+recursos:
+  - nombre: "TanStack Query - TypeScript"
+    url: "https://tanstack.com/query/latest/docs/framework/react/typescript"
+  - nombre: "Axios - TypeScript"
+    url: "https://axios-http.com/docs/intro"
+---
+
+> **🎯 Objetivo de la semana:** Al terminar sabrás realizar peticiones HTTP tipadas con Fetch y Axios, gestionar el estado del servidor con TanStack Query y separar todas las llamadas HTTP en una capa de servicios que los componentes consumen sin saber cómo funciona la API por dentro.
+>
+> **🔑 Concepto clave:** Separación cliente-servidor — los componentes React no deberían saber si los datos vienen de REST, GraphQL o un mock. La capa de servicios es el contrato: si la API cambia, solo cambia el servicio, no los componentes.
+>
+> **🛠 Tarea práctica:** Esta semana no cambia el frontend. Solo el backend: reemplazar el array `ARTICULOS_MOCK` del servidor por consultas reales a PostgreSQL usando `pg.Pool`.
+>
+> **📋 Entregable:** `GET /api/articulos` devuelve artículos de PostgreSQL. La `HomePage` los muestra sin cambiar una sola línea del código React.
+
+---
+
+## 1. Fetch API tipado con TypeScript
+
+Hasta ahora los componentes leían datos de arrays importados directamente — `ARTICULOS_MOCK` nunca falla, nunca tarda y nunca devuelve un error HTTP. La red real es distinta: las peticiones pueden fallar, llegar vacías o devolver un cuerpo que no es JSON. TypeScript no puede verificar lo que llega desde el servidor en runtime, pero sí puede garantizar que el código lo trata como el tipo correcto.
+
+El patrón base es una función genérica que acepta el tipo esperado como parámetro de tipo. El punto crítico está en `response.ok`: `fetch` no lanza un error en respuestas 4xx/5xx — devuelve la respuesta con `ok: false`. Si no verificas esto, parsearás silenciosamente un cuerpo de error como si fuera datos válidos:
+
+```tsx
+// Helper genérico: el tipo T viaja desde quien llama hasta el return
+async function fetchData<T>(url: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(url, options);
+  if (!res.ok) {
+    // fetch no lanza error en 404/500 — hay que hacerlo manualmente
+    throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+// TypeScript sabe exactamente qué devuelve cada llamada
+const articulos = await fetchData<Articulo[]>("/api/articulos");
+const uno      = await fetchData<Articulo>(`/api/articulos/${slug}`);
+```
+
+Para tipar las variables de entorno de Vite, extiende la interfaz global en `vite-env.d.ts`:
+
+```tsx
+interface ImportMetaEnv {
+  readonly VITE_API_URL: string;
+}
+// A partir de aquí, import.meta.env.VITE_API_URL tiene autocompletado
+```
+
+## 2. Axios con TypeScript
+
+`fetch` requiere verificar `response.ok` manualmente en cada llamada y no tiene forma nativa de adjuntar headers globales. Axios resuelve ambos problemas con `axios.create()` — una instancia configurada con `baseURL`, `timeout` y headers predeterminados que hereda toda petición hecha a través de ella.
+
+Los interceptores son el diferenciador clave: permiten inyectar el token JWT en cada request sin tocarlo en cada servicio, y capturar errores 401 globalmente para redirigir al login. `isAxiosError` es el type guard que Axios exporta — sin él TypeScript trataría el `catch (e)` como `unknown` y no podría acceder a `e.response`:
+
+```tsx
+import axios, { isAxiosError } from "axios";
+
+const apiClient = axios.create({
+  baseURL: import.meta.env.VITE_API_URL,
+  timeout: 10_000,
+});
+
+// Interceptor de request: adjunta el token sin repetirlo en cada servicio
+apiClient.interceptors.request.use((config) => {
+  const token = localStorage.getItem("token");
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
+// El tipo genérico viaja hasta response.data — TypeScript infiere el tipo
+async function getArticulos(): Promise<Articulo[]> {
+  const { data } = await apiClient.get<Articulo[]>("/articulos");
+  return data;
+}
+
+// En el catch, isAxiosError actúa como type guard para acceder a e.response
+async function crearArticulo(body: NuevoArticulo) {
+  try {
+    return await apiClient.post<Articulo>("/articulos", body);
+  } catch (e) {
+    if (isAxiosError(e)) console.error(e.response?.data); // tipo conocido
+    throw e;
+  }
+}
+```
+
+## 3. TanStack Query (React Query) con TypeScript
+
+Incluso con Axios, aún necesitas gestionar `loading`, `error` y `data` manualmente con `useState` en cada componente. Si dos componentes distintos necesitan los mismos artículos, hacen dos peticiones separadas. Si creas un artículo, necesitas actualizar el estado en todos los lugares que lo muestran. TanStack Query resuelve todo esto con un caché centralizado del servidor.
+
+`useQuery` infiere los tipos directamente del `queryFn` — no hay que declarar genéricos adicionales. `useMutation` cierra el ciclo de escritura: cuando la mutación termina, `invalidateQueries` marca el caché de lectura como obsoleto y los componentes se actualizan solos:
+
+```tsx
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+
+// Los tipos se infieren del queryFn — no hay que repetirlos
+function useArticulos(filtros?: { estado?: string }) {
+  return useQuery({
+    queryKey: ["articulos", filtros],   // clave única por combinación de filtros
+    queryFn: () => articulosService.getAll(filtros),
+    staleTime: 1000 * 60 * 5,          // 5 min antes de refetch automático
+  });
+}
+
+function useCrearArticulo() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: NuevoArticulo) => articulosService.crear(data),
+    onSuccess: () => {
+      // Invalida el caché: todos los componentes que usen useArticulos se actualizan
+      queryClient.invalidateQueries({ queryKey: ["articulos"] });
+    },
+  });
+}
+
+// En el componente: sin useState para loading/error/data
+function ArticulosAdmin() {
+  const { data, isLoading, isError } = useArticulos();
+  const { mutate: crear, isPending } = useCrearArticulo();
+
+  if (isLoading) return <Spinner />;
+  if (isError)   return <ErrorBanner />;
+
+  return <TablaArticulos articulos={data?.data ?? []} onCrear={crear} />;
+}
+```
+
+## 4. Capa de servicios tipada
+
+Llamar a `fetch` o Axios directamente desde los componentes crea acoplamiento directo entre la UI y los detalles de la API: si cambia la URL base o la estructura de la respuesta, hay que buscar y cambiar en múltiples archivos. El patrón de **servicio** agrupa todas las llamadas de un recurso en un objeto, exporta una sola interfaz y deja a los componentes sin saber si detrás hay REST, GraphQL o un mock:
+
+```tsx
+// src/services/articulosService.ts — una sola fuente de verdad para la API
+import type { Articulo, NuevoArticulo, ApiResponse } from "@/types";
+
+const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
+
+async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${BASE}${url}`, {
+    headers: { "Content-Type": "application/json" },
+    ...init,
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json() as Promise<T>;
+}
+
+export const articulosService = {
+  getAll:    (p?: { estado?: string; busqueda?: string }) => {
+    const qs = p ? new URLSearchParams(p as Record<string, string>).toString() : "";
+    return fetchJSON<ApiResponse<Articulo[]>>(`/api/articulos${qs ? `?${qs}` : ""}`);
+  },
+  getBySlug: (slug: string) =>
+    fetchJSON<ApiResponse<Articulo>>(`/api/articulos/${slug}`),
+  crear:     (data: NuevoArticulo) =>
+    fetchJSON<ApiResponse<Articulo>>("/api/articulos", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  eliminar:  (id: number) =>
+    fetchJSON<void>(`/api/articulos/${id}`, { method: "DELETE" }),
+};
+// Los hooks y componentes solo importan articulosService — nunca fetch directo
+```
+
+---
+
+## Actividades prácticas
+
+**Actividad 1 — Fetch genérico (45 min)**
+Crear la función `fetchData<T>` con manejo de errores. Cargar una lista de posts de `jsonplaceholder.typicode.com` y tipar la respuesta.
+
+**Actividad 2 — Instancia Axios (60 min)**
+Crear una instancia Axios con `baseURL` desde env var. Implementar interceptor de request para token y interceptor de response para logging de errores.
+
+**Actividad 3 — TanStack Query (90 min)**
+Configurar `QueryClientProvider` en la app. Implementar `useProductos` y `useCrearProducto`. Crear una UI con listado, formulario de creación y estado de loading/error.
+
+**Actividad 4 — Capa de servicios (45 min)**
+Refactorizar las llamadas HTTP en módulos `productosService.ts` y `usuariosService.ts`. Asegurar que los tipos se exporten y usen en los componentes.
+
+---
+
+## 🛠 Proyecto CMS — Semana 7: Añadir PostgreSQL al servidor Express
+
+El servidor Express lleva dos semanas corriendo y devolviendo el array `ARTICULOS_MOCK` en memoria. Esta semana ese array desaparece: las mismas rutas (`GET /api/articulos`, `GET /api/articulos/:slug`) empiezan a leer de PostgreSQL. El frontend no cambia ni una línea — el servicio y TanStack Query ya están configurados desde S6.
+
+### Paso 1 — Instalar `pg` y crear el pool de conexión
+
+```bash
+cd api
+npm install pg dotenv
+npm install -D @types/pg
+```
+
+```typescript
+// api/src/db/pool.ts
+import { Pool } from "pg";
+import "dotenv/config";
+
+export const pool = new Pool({
+  host:     process.env.DB_HOST     ?? "localhost",
+  port:     Number(process.env.DB_PORT ?? 5432),
+  database: process.env.DB_NAME     ?? "cms_blog",
+  user:     process.env.DB_USER     ?? "postgres",
+  password: process.env.DB_PASSWORD,
+});
+
+// Verificar la conexión al arrancar
+pool.connect()
+  .then(() => console.log("✅ PostgreSQL conectado"))
+  .catch((e) => console.error("❌ Error al conectar a PostgreSQL:", e));
+```
+
+### Paso 2 — Crear el esquema de base de datos
+
+```sql
+-- api/src/db/schema.sql  (ejecútalo en DBeaver o psql)
+CREATE TABLE categorias (
+  id     SERIAL PRIMARY KEY,
+  nombre VARCHAR(100) NOT NULL,
+  slug   VARCHAR(100) UNIQUE NOT NULL,
+  color  VARCHAR(7) DEFAULT '#3b82f6'
+);
+
+CREATE TYPE estado_articulo AS ENUM ('borrador', 'publicado', 'archivado');
+
+CREATE TABLE articulos (
+  id               SERIAL PRIMARY KEY,
+  titulo           VARCHAR(255) NOT NULL,
+  slug             VARCHAR(255) UNIQUE NOT NULL,
+  extracto         TEXT,
+  contenido        TEXT,
+  imagen           VARCHAR(500),
+  categoria_id     INT REFERENCES categorias(id),
+  autor            VARCHAR(100) DEFAULT 'Administrador',
+  tiempo_lectura   INT          DEFAULT 5,
+  estado           estado_articulo DEFAULT 'borrador',
+  fecha_publicacion TIMESTAMPTZ,
+  created_at       TIMESTAMPTZ  DEFAULT NOW(),
+  updated_at       TIMESTAMPTZ  DEFAULT NOW()
+);
+
+-- Datos de prueba
+INSERT INTO categorias (nombre, slug, color) VALUES
+  ('Programación', 'programacion', '#3b82f6'),
+  ('Diseño',       'diseno',       '#8b5cf6');
+```
+
+### Paso 3 — Reemplazar el mock en las rutas de artículos
+
+```typescript
+// api/src/routes/articulos.ts — ARTICULOS_MOCK reemplazado por pool.query
+import { Router } from "express";
+import { pool } from "../db/pool";
+
+const router = Router();
+
+router.get("/", async (req, res, next) => {
+  try {
+    const { estado, busqueda } = req.query;
+    let query = `
+      SELECT a.*, c.nombre AS categoria_nombre, c.slug AS categoria_slug, c.color AS categoria_color
+      FROM articulos a
+      JOIN categorias c ON a.categoria_id = c.id
+      WHERE 1=1
+    `;
+    const params: unknown[] = [];
+
+    if (estado && estado !== "todos") {
+      params.push(estado);
+      query += ` AND a.estado = $${params.length}`;
+    }
+    if (busqueda && typeof busqueda === "string") {
+      params.push(`%${busqueda}%`);
+      query += ` AND a.titulo ILIKE $${params.length}`;
+    }
+    query += " ORDER BY a.created_at DESC";
+
+    const { rows } = await pool.query(query, params);
+    res.json({ data: rows, status: 200 });
+  } catch (e) { next(e); }
+});
+
+router.get("/:slug", async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT a.*, c.nombre AS categoria_nombre
+       FROM articulos a JOIN categorias c ON a.categoria_id = c.id
+       WHERE a.slug = $1`,
+      [req.params.slug]
+    );
+    if (!rows.length) return res.status(404).json({ error: "No encontrado" });
+    res.json({ data: rows[0], status: 200 });
+  } catch (e) { next(e); }
+});
+
+export default router;
+```
+
+### Paso 4 — Variables de entorno del backend
+
+```env
+# api/.env  (nunca subir a git — añadir a .gitignore)
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=cms_blog
+DB_USER=postgres
+DB_PASSWORD=tu_contraseña
+PORT=3001
+FRONTEND_URL=http://localhost:5173
+```
+
+> **El frontend no cambia esta semana.** El servicio `articulosService` y los hooks TanStack Query del frontend siguen funcionando igual — la URL de la API no cambió. Solo cambió lo que pasa dentro del servidor cuando recibe la petición.
+
+> **Para la próxima semana (Semana 8)**: El backend ya lee desde PostgreSQL pero solo tiene rutas `GET`. En la Semana 8 añadirás `POST`, `PUT` y `DELETE` al servidor Express, implementarás el handler de subida de archivos con `multer` y completarás la arquitectura MVC (controllers/models/routes separados). La Semana 9 cerrará el ciclo conectando esas rutas desde el panel admin del frontend.
+
+---
+
+## 📋 Entregable de la semana
+
+Para considerar completada la Semana 7, el backend debe funcionar con PostgreSQL real:
+
+- [ ] **PostgreSQL conectado**: `npm run dev` en `api/` arranca y muestra `✅ PostgreSQL conectado` en consola. Sin errores de conexión.
+- [ ] **Schema ejecutado**: Las tablas `categorias` y `articulos` existen en la base de datos con al menos 2 artículos de prueba insertados.
+- [ ] **`GET /api/articulos` desde DB**: El endpoint devuelve los artículos de PostgreSQL — no el array `ARTICULOS_MOCK`. Verificable con `curl` o el devtools del navegador.
+- [ ] **Filtros funcionando**: `GET /api/articulos?estado=publicado` devuelve solo artículos publicados. `GET /api/articulos?busqueda=css` devuelve artículos cuyo título contiene "css".
+- [ ] **Página pública actualizada**: La `HomePage` del frontend muestra los artículos de la base de datos sin cambiar ningún archivo del frontend.
+- [ ] **Variables de entorno**: `api/.env` tiene las credenciales de BD. El archivo está en `.gitignore`.

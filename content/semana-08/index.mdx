@@ -1,0 +1,472 @@
+---
+titulo: "Backend CRUD completo con Express y multer"
+descripcion: "Endpoints POST, PUT y DELETE tipados con Express + PostgreSQL, arquitectura MVC y subida de archivos con multer."
+duracion: "8h"
+semana: 8
+objetivos:
+  - "Implementar los endpoints POST, PUT y DELETE en Express con TypeScript"
+  - "Separar la lógica en controllers, models y routes (arquitectura MVC)"
+  - "Manejar errores de PostgreSQL de forma tipada (duplicados, FK violations)"
+  - "Configurar multer para recibir y guardar archivos de imagen"
+  - "Exponer un endpoint POST /api/upload con validación de MIME y tamaño"
+recursos:
+  - nombre: "Express.js - Routing"
+    url: "https://expressjs.com/en/guide/routing.html"
+  - nombre: "multer - npm"
+    url: "https://github.com/expressjs/multer"
+  - nombre: "node-postgres (pg) - Queries"
+    url: "https://node-postgres.com/features/queries"
+---
+
+> **🎯 Objetivo de la semana:** Al terminar tendrás una API REST completa — GET, POST, PUT, DELETE y upload de archivos — organizada en la arquitectura MVC y conectada a PostgreSQL. Cualquier cliente (el frontend React, Postman o `curl`) podrá crear, editar y eliminar artículos con o sin imagen.
+>
+> **🔑 Concepto clave:** Arquitectura MVC en Express — separar responsabilidades en tres capas: la **ruta** solo recibe la petición HTTP y la despacha; el **controller** orquesta la lógica de negocio; el **model** ejecuta las consultas SQL. Cada capa es testeable de forma independiente.
+>
+> **🛠 Tarea práctica:** Completar la API del CMS con los endpoints de escritura: `POST /api/articulos`, `PUT /api/articulos/:slug`, `DELETE /api/articulos/:id` y `POST /api/upload`. Reorganizar el backend con la arquitectura MVC.
+>
+> **📋 Entregable:** Desde Postman o Thunder Client puedes crear un artículo con imagen, editarlo, cambiarle la foto y eliminarlo. El backend responde con los códigos HTTP correctos (201, 200, 204, 400, 404, 409) y los errores descriptivos.
+
+---
+
+## 1. Arquitectura MVC en Express
+
+En las semanas anteriores pusiste las consultas SQL directamente dentro de las rutas — funciona, pero cuando la API crece se vuelve difícil de mantener: un router de 300 líneas mezcla HTTP, validación y SQL. El patrón **MVC** (Model-View-Controller) separa estas responsabilidades:
+
+```
+src/
+├── routes/
+│   └── articulos.routes.ts     ← solo define qué verbo HTTP llama a qué controller
+├── controllers/
+│   └── articulos.controller.ts ← recibe req/res, valida input, llama al model
+├── models/
+│   └── articulos.model.ts      ← ejecuta SQL, devuelve datos tipados
+└── middleware/
+    └── upload.ts               ← configuración de multer
+```
+
+La ventaja práctica: si mañana cambias de `pg` a Prisma, solo modificas los models — las rutas y controllers no cambian. Si cambias la lógica de negocio, solo cambias el controller.
+
+### El modelo: consultas SQL tipadas
+
+```typescript
+// src/models/articulos.model.ts
+import { pool } from "../db/pool";
+import type { Articulo, NuevoArticulo, ActualizarArticulo } from "../types";
+
+// Genera un slug URL-safe desde un título
+function generarSlug(titulo: string): string {
+  return titulo
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")   // quitar tildes
+    .replace(/[^a-z0-9\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-");
+}
+
+export async function insertarArticulo(datos: NuevoArticulo): Promise<Articulo> {
+  const slug = generarSlug(datos.titulo);
+  const { rows } = await pool.query<Articulo>(
+    `INSERT INTO articulos
+       (titulo, slug, extracto, contenido, imagen, categoria_id, estado, autor)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+     RETURNING *`,
+    [datos.titulo, slug, datos.extracto ?? null, datos.contenido ?? null,
+     datos.imagen ?? null, datos.categoria_id, datos.estado ?? "borrador",
+     datos.autor ?? "Administrador"]
+  );
+  return rows[0];
+}
+
+export async function actualizarArticulo(
+  slug: string,
+  campos: ActualizarArticulo
+): Promise<Articulo | null> {
+  // Construir el SET dinámico: solo los campos que vienen en el body
+  const keys = Object.keys(campos).filter(
+    (k) => campos[k as keyof ActualizarArticulo] !== undefined
+  );
+  if (!keys.length) throw new Error("No hay campos para actualizar");
+
+  const sets = keys.map((k, i) => `${k} = $${i + 1}`).join(", ");
+  const values = keys.map((k) => campos[k as keyof ActualizarArticulo]);
+
+  const { rows } = await pool.query<Articulo>(
+    `UPDATE articulos SET ${sets}, updated_at = NOW()
+     WHERE slug = $${keys.length + 1}
+     RETURNING *`,
+    [...values, slug]
+  );
+  return rows[0] ?? null;
+}
+
+export async function eliminarArticulo(id: number): Promise<boolean> {
+  const { rowCount } = await pool.query(
+    "DELETE FROM articulos WHERE id = $1",
+    [id]
+  );
+  return (rowCount ?? 0) > 0;
+}
+```
+
+### El controller: validación y respuesta HTTP
+
+```typescript
+// src/controllers/articulos.controller.ts
+import type { Request, Response, NextFunction } from "express";
+import * as articulosModel from "../models/articulos.model";
+
+export async function crear(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { titulo, extracto, contenido, imagen, categoria_id, estado, autor } = req.body;
+
+    // Validación en la frontera del sistema
+    if (!titulo || !categoria_id) {
+      return res.status(400).json({ error: "titulo y categoria_id son obligatorios" });
+    }
+
+    const articulo = await articulosModel.insertarArticulo(
+      { titulo, extracto, contenido, imagen, categoria_id, estado, autor }
+    );
+    res.status(201).json({ data: articulo, status: 201 });
+  } catch (e) { next(e); }
+}
+
+export async function actualizar(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { slug } = req.params;
+    const articulo = await articulosModel.actualizarArticulo(slug, req.body);
+    if (!articulo) return res.status(404).json({ error: "Artículo no encontrado" });
+    res.json({ data: articulo, status: 200 });
+  } catch (e) { next(e); }
+}
+
+export async function eliminar(req: Request, res: Response, next: NextFunction) {
+  try {
+    const id = Number(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ error: "ID inválido" });
+    const eliminado = await articulosModel.eliminarArticulo(id);
+    if (!eliminado) return res.status(404).json({ error: "Artículo no encontrado" });
+    res.status(204).send();
+  } catch (e) { next(e); }
+}
+```
+
+### La ruta: un archivo limpio de solo HTTP
+
+```typescript
+// src/routes/articulos.routes.ts
+import { Router } from "express";
+import * as ctrl from "../controllers/articulos.controller";
+
+const router = Router();
+
+router.get("/",       ctrl.listar);
+router.get("/:slug",  ctrl.obtener);
+router.post("/",      ctrl.crear);
+router.put("/:slug",  ctrl.actualizar);
+router.delete("/:id", ctrl.eliminar);
+
+export default router;
+```
+
+---
+
+## 2. Manejo de errores de PostgreSQL
+
+Cuando el INSERT falla porque el slug ya existe (violación UNIQUE) o porque la `categoria_id` no existe (violación FK), PostgreSQL lanza un error con un código específico. Si no lo capturas, el servidor devuelve un 500 genérico. El error handler en Express recibe ese error en el último middleware:
+
+```typescript
+// src/middleware/errorHandler.ts
+import type { Request, Response, NextFunction } from "express";
+
+interface PgError extends Error {
+  code?: string;    // código de error de PostgreSQL
+  detail?: string;  // detalle legible del error
+}
+
+export function errorHandler(
+  err: PgError,
+  _req: Request,
+  res: Response,
+  _next: NextFunction
+) {
+  // 23505 = unique_violation (slug duplicado)
+  if (err.code === "23505") {
+    return res.status(409).json({
+      error: "Ya existe un artículo con ese título",
+      detail: err.detail,
+    });
+  }
+  // 23503 = foreign_key_violation (categoria_id no existe)
+  if (err.code === "23503") {
+    return res.status(400).json({
+      error: "La categoría indicada no existe",
+      detail: err.detail,
+    });
+  }
+
+  console.error("Error no controlado:", err);
+  res.status(500).json({ error: "Error interno del servidor" });
+}
+```
+
+Registra el error handler **después** de todas las rutas en `app.ts`:
+
+```typescript
+// src/app.ts — el orden importa
+app.use("/api/articulos", articulosRouter);
+app.use("/api/upload",    uploadRouter);
+app.use(errorHandler);   // ← siempre al final
+```
+
+---
+
+## 3. Subida de archivos con multer
+
+Un formulario que envía una imagen no usa `Content-Type: application/json` — usa `multipart/form-data`. `express.json()` no puede procesarlo. `multer` es el middleware que intercepta ese tipo de petición, extrae el archivo y lo guarda en disco.
+
+```bash
+cd api
+npm install multer
+npm install -D @types/multer
+```
+
+### Configuración de multer
+
+```typescript
+// src/middleware/upload.ts
+import multer from "multer";
+import path from "path";
+import crypto from "crypto";
+import type { Request } from "express";
+
+// Directorio de uploads configurable por variable de entorno
+export const UPLOADS_DIR =
+  process.env.UPLOADS_DIR ??
+  path.join(__dirname, "../../../frontend/public/uploads");
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
+  filename: (_req, file, cb) => {
+    // Nombre único: timestamp + 10 bytes aleatorios + extensión original
+    const ext = path.extname(file.originalname).toLowerCase();
+    const nombre = `${Date.now()}-${crypto.randomBytes(10).toString("hex")}${ext}`;
+    cb(null, nombre);
+  },
+});
+
+function fileFilter(
+  _req: Request,
+  file: Express.Multer.File,
+  cb: multer.FileFilterCallback
+) {
+  const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"];
+  if (allowed.includes(file.mimetype)) {
+    cb(null, true);
+  } else {
+    cb(new Error(`Tipo de archivo no permitido: ${file.mimetype}`));
+  }
+}
+
+export const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // máximo 5 MB
+  fileFilter,
+});
+```
+
+### Endpoint POST /api/upload
+
+```typescript
+// src/routes/upload.routes.ts
+import { Router } from "express";
+import { upload } from "../middleware/upload";
+import type { Request, Response, NextFunction } from "express";
+import multer from "multer";
+
+const router = Router();
+
+router.post("/", upload.single("imagen"), (req: Request, res: Response) => {
+  if (!req.file) {
+    return res.status(400).json({ error: "No se recibió ningún archivo" });
+  }
+  // Solo devuelve el nombre del archivo — el frontend construye la URL completa
+  res.json({
+    data: { filename: req.file.filename },
+    mensaje: "Archivo subido correctamente",
+    status: 200,
+  });
+});
+
+// Errores de multer (tamaño excedido, tipo inválido)
+router.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+  if (err instanceof multer.MulterError) {
+    return res.status(400).json({ error: `Error de upload: ${err.message}` });
+  }
+  res.status(400).json({ error: err.message });
+});
+
+export default router;
+```
+
+### Servir las imágenes como archivos estáticos
+
+```typescript
+// src/app.ts
+import express from "express";
+import { UPLOADS_DIR } from "./middleware/upload";
+
+const app = express();
+
+// http://localhost:3001/uploads/nombre.jpg sirve el archivo desde UPLOADS_DIR
+app.use("/uploads", express.static(UPLOADS_DIR));
+
+// ... resto de middlewares y rutas
+```
+
+---
+
+## 4. Tipos del backend
+
+```typescript
+// src/types/index.ts
+export interface Articulo {
+  id: number;
+  titulo: string;
+  slug: string;
+  extracto: string | null;
+  contenido: string | null;
+  imagen: string | null;
+  categoria_id: number;
+  autor: string;
+  tiempo_lectura: number;
+  estado: "borrador" | "publicado" | "archivado";
+  fecha_publicacion: string | null;
+  created_at: string;
+  updated_at: string;
+  categoria_nombre?: string;
+  categoria_slug?: string;
+  categoria_color?: string;
+}
+
+export interface NuevoArticulo {
+  titulo: string;
+  extracto?: string;
+  contenido?: string;
+  imagen?: string;
+  categoria_id: number;
+  estado?: "borrador" | "publicado" | "archivado";
+  autor?: string;
+}
+
+// Partial para que PUT solo requiera los campos que cambian
+export type ActualizarArticulo = Partial<
+  Omit<NuevoArticulo, "titulo"> & { titulo: string }
+>;
+
+export interface ApiResponse<T> {
+  data: T;
+  status: number;
+  mensaje?: string;
+}
+```
+
+---
+
+## Actividades prácticas
+
+**Actividad 1 — Arquitectura MVC (60 min)**
+Reorganizar el servidor en carpetas `routes/`, `controllers/`, `models/`. Verificar que `GET /api/articulos` sigue funcionando después de la refactorización.
+
+**Actividad 2 — POST con validación (60 min)**
+Implementar `POST /api/articulos`. Probar con Postman: enviar body sin `titulo` (debe dar 400), con título duplicado (debe dar 409) y con datos válidos (debe dar 201 con el artículo creado).
+
+**Actividad 3 — PUT dinámico (45 min)**
+Implementar `PUT /api/articulos/:slug` con campos opcionales. Verificar que si solo envías `{ "estado": "publicado" }` solo cambia ese campo.
+
+**Actividad 4 — multer upload (60 min)**
+Configurar multer y `POST /api/upload`. Probar con Postman en modo `form-data`: subir una imagen `.jpg`, verificar que aparece en `uploads/` con nombre único y que la respuesta incluye `filename`.
+
+---
+
+## 🛠 Proyecto CMS — Semana 8: API CRUD completa + subida de imágenes
+
+### Paso 1 — Reorganizar en MVC
+
+```
+api/src/
+├── controllers/
+│   └── articulos.controller.ts
+├── models/
+│   └── articulos.model.ts
+├── routes/
+│   ├── articulos.routes.ts
+│   └── upload.routes.ts
+├── middleware/
+│   ├── upload.ts
+│   └── errorHandler.ts
+├── db/
+│   └── pool.ts
+├── types/
+│   └── index.ts
+├── app.ts
+└── server.ts
+```
+
+Mueve las rutas existentes a esta estructura. Ejecuta `npm run dev` y verifica que `GET /api/articulos` sigue devolviendo datos.
+
+### Paso 2 — Añadir tipos `NuevoArticulo` y `ActualizarArticulo`
+
+Actualiza `src/types/index.ts` con las interfaces de la sección 4. Importa y usa estos tipos en los models.
+
+### Paso 3 — Implementar models de escritura
+
+Añade `insertarArticulo`, `actualizarArticulo` y `eliminarArticulo` en `articulos.model.ts`. Incluye la función `generarSlug`.
+
+### Paso 4 — Controllers y rutas de escritura
+
+Añade `crear`, `actualizar` y `eliminar` al controller. Registra `POST /`, `PUT /:slug` y `DELETE /:id` en las rutas.
+
+### Paso 5 — Error handler global
+
+Crea `errorHandler.ts` con los códigos `23505` y `23503`. Regístralo en `app.ts` **después** de todas las rutas.
+
+### Paso 6 — multer + upload endpoint
+
+Instala `multer`. Crea `middleware/upload.ts` con `diskStorage` y `fileFilter`. Crea `routes/upload.routes.ts`. Añade `app.use("/uploads", express.static(UPLOADS_DIR))` en `app.ts`.
+
+### Paso 7 — Verificar con curl o Postman
+
+```bash
+# Crear artículo
+curl -X POST http://localhost:3001/api/articulos \
+  -H "Content-Type: application/json" \
+  -d '{"titulo":"Mi primer post","categoria_id":1,"estado":"borrador"}'
+
+# Editar solo el estado
+curl -X PUT http://localhost:3001/api/articulos/mi-primer-post \
+  -H "Content-Type: application/json" \
+  -d '{"estado":"publicado"}'
+
+# Eliminar
+curl -X DELETE http://localhost:3001/api/articulos/1
+
+# Subir imagen (multipart/form-data)
+curl -X POST http://localhost:3001/api/upload \
+  -F "imagen=@/ruta/a/tu/foto.jpg"
+```
+
+> **Para la próxima semana (Semana 9)**: Con la API completa, en la Semana 9 conectarás el panel admin del frontend a estas rutas — formularios de creación y edición wired a la API, subida de imágenes desde el navegador y gestión del ciclo de escritura con `useMutation` de TanStack Query.
+
+---
+
+## 📋 Entregable de la semana
+
+- [ ] **Arquitectura MVC**: Código separado en `controllers/`, `models/`, `routes/` y `middleware/`. Cada archivo tiene una responsabilidad única.
+- [ ] **`POST /api/articulos`**: Crea artículo, genera slug automático, devuelve 201. Body sin `titulo` devuelve 400. Título duplicado devuelve 409.
+- [ ] **`PUT /api/articulos/:slug`**: Actualiza solo los campos enviados. Slug inexistente devuelve 404.
+- [ ] **`DELETE /api/articulos/:id`**: Elimina y devuelve 204. ID inexistente devuelve 404.
+- [ ] **`POST /api/upload`**: Recibe `multipart/form-data` con campo `imagen`, guarda el archivo con nombre único y devuelve `{ data: { filename } }`. Archivos no-imagen devuelven 400.
+- [ ] **Archivos estáticos**: Una imagen subida es accesible en `http://localhost:3001/uploads/nombre-del-archivo.jpg`.
+- [ ] **Error handler**: Los errores de PostgreSQL y de multer devuelven mensajes descriptivos con el código HTTP correcto (no 500 genérico).

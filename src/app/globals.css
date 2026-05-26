@@ -1,0 +1,444 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+/* Class-based dark mode for Tailwind v4 */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ─── Design tokens ─────────────────────────────────────── */
+:root {
+  --background:      #f7f7f5;
+  --foreground:      #0a0a0a;
+  --navbar-bg:       #ffffff;
+  --sidebar-bg:      #f0f0ee;
+  --sidebar-border:  #dcdcd8;
+  --prose-body:      #374151;
+  --prose-headings:  #0a0a0a;
+  --prose-lead:      #4b5563;
+  --prose-links:     #4d6600;
+  --prose-code-bg:   #f0f0ee;
+  --prose-code-text: #b35800;
+  --prose-hr:        #e0e0dc;
+  --prose-quote-border: #7aaa00;
+}
+
+.dark {
+  --background:      #080808;
+  --foreground:      #e8e8e8;
+   --navbar-bg:       #141414;
+  --sidebar-bg:      #0d0d0d;
+  --sidebar-border:  #1c1c1c;
+  --prose-body:      #c8c8c8;
+  --prose-headings:  #f0f0f0;
+  --prose-lead:      #9ca3af;
+  --prose-links:     #c5ff00;
+  --prose-code-bg:   #141414;
+  --prose-code-text: #f472b6;
+  --prose-hr:        #1c1c1c;
+  --prose-quote-border: #c5ff00;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+/* ─── Base ──────────────────────────────────────────────── */
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans, system-ui, sans-serif);
+  line-height: 1.6;
+}
+
+/* ─── Prose customization ───────────────────────────────── */
+
+/* Tamaño base de artículos */
+.prose {
+  font-size: 1rem;
+  line-height: 1.8;
+  color: var(--prose-body);
+}
+
+/* Headings */
+.prose h1 {
+  font-size: 1.875rem;  /* 30px */
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  margin-top: 0;
+  margin-bottom: 1rem;
+  color: var(--prose-headings);
+}
+.prose h2 {
+  font-size: 1.375rem;  /* 22px */
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: -0.015em;
+  margin-top: 2.5rem;
+  margin-bottom: 0.75rem;
+  color: var(--prose-headings);
+  padding-bottom: 0.4rem;
+  border-bottom: 2px solid var(--prose-hr);
+}
+.prose h3 {
+  font-size: 1.125rem;  /* 18px */
+  font-weight: 600;
+  margin-top: 2rem;
+  margin-bottom: 0.5rem;
+  color: var(--prose-headings);
+}
+.prose h4 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-top: 1.5rem;
+  margin-bottom: 0.4rem;
+  color: var(--prose-headings);
+}
+
+/* Párrafos */
+.prose p {
+  margin-top: 0;
+  margin-bottom: 1.25rem;
+  color: var(--prose-body);
+  line-height: 200%;
+}
+
+/* Lead */
+.prose > p:first-of-type {
+  font-size: 1.0625rem;
+  color: var(--prose-lead);
+}
+
+/* Links */
+.prose a {
+  color: var(--prose-links);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+  font-weight: 500;
+  transition: opacity 0.15s;
+}
+.prose a:hover {
+  opacity: 0.75;
+}
+
+/* Bold / Strong */
+.prose strong {
+  font-weight: 600;
+  color: var(--prose-headings);
+}
+
+/* Inline code — sin comillas, fondo suave */
+.prose code::before,
+.prose code::after {
+  content: "" !important;
+}
+.prose :not(pre) > code {
+  background: var(--prose-code-bg);
+  color: var(--prose-code-text);
+  font-size: 0.875em;
+  font-weight: 500;
+  padding: 0.15em 0.45em;
+  border-radius: 0.3em;
+  font-family: var(--font-geist-mono, ui-monospace, monospace);
+  border: 1px solid color-mix(in srgb, var(--prose-code-text) 20%, transparent);
+  padding: 0 0.5rem;
+}
+
+/* Listas */
+.prose ul {
+  list-style-type: disc;
+  padding-left: 1.5rem;
+  margin-bottom: 1.25rem;
+}
+.prose ol {
+  list-style-type: decimal;
+  padding-left: 1.5rem;
+  margin-bottom: 1.25rem;
+}
+.prose li {
+  margin-bottom: 0.4rem;
+  line-height: 1.7;
+  color: var(--prose-body);
+}
+.prose li::marker {
+  color: var(--prose-quote-border);
+}
+
+/* Blockquote */
+.prose blockquote {
+  border-left: 3px solid var(--prose-quote-border);
+  padding: 0.5rem 1rem;
+  margin: 1.5rem 0;
+  background: color-mix(in srgb, var(--prose-quote-border) 6%, transparent);
+  border-radius: 0 0.375rem 0.375rem 0;
+  font-style: normal;
+}
+.prose blockquote p {
+  margin: 0;
+  color: var(--prose-lead);
+}
+
+/* HR */
+.prose hr {
+  border-color: var(--prose-hr);
+  margin: 2.5rem 0;
+}
+
+/* Tables — reset del display:block que inyecta @tailwindcss/typography */
+.prose table {
+  display: table;
+  width: 100%;
+  white-space: normal;
+}
+
+/* Dark mode prose adjustments */
+.dark .prose {
+  color: var(--prose-body);
+}
+.dark .prose h1,
+.dark .prose h2,
+.dark .prose h3,
+.dark .prose h4,
+.dark .prose strong {
+  color: var(--prose-headings);
+}
+.dark .prose p,
+.dark .prose li {
+  color: var(--prose-body);
+}
+
+/* ─── Code blocks (Shiki) ───────────────────────────────── */
+
+/*
+  Shiki dual-theme genera variables CSS --shiki-dark y --shiki-dark-bg
+  para el tema oscuro. Sin estas reglas los colores no se aplican en dark.
+*/
+.shiki,
+.shiki span {
+  color:            var(--shiki-light,            #24292e);
+  background-color: #fafafa;
+  font-style:       var(--shiki-light-font-style,  inherit);
+  font-weight:      var(--shiki-light-font-weight, inherit);
+  text-decoration:  none;
+  font-variant-ligatures: none;
+  font-feature-settings: "calt" 0, "liga" 0;
+}
+.dark .shiki,
+.dark .shiki span {
+  color:            var(--shiki-dark,            #e1e4e8) !important;
+  background-color: var(--shiki-dark-bg,         #0d1117) !important;
+  font-style:       var(--shiki-dark-font-style,  inherit) !important;
+  font-weight:      var(--shiki-dark-font-weight, inherit) !important;
+  text-decoration:  none !important;
+  font-variant-ligatures: none !important;
+  font-feature-settings: "calt" 0, "liga" 0 !important;
+}
+
+/* ─── Code block wrapper ─────────────────────────────────── */
+.code-block-wrapper {
+  position: relative;
+  margin: 1.75rem 0;
+  border-radius: 0.625rem;
+  overflow: hidden;
+  border: 1px solid #e2e4e9;
+  background: #fafafa;
+  box-shadow: 0 1px 4px 0 rgb(0 0 0 / 0.05), 0 0 0 1px rgb(0 0 0 / 0.03);
+}
+.dark .code-block-wrapper {
+  border-color: #30363d;
+  background: #0d1117;
+  box-shadow: 0 1px 4px 0 rgb(0 0 0 / 0.4);
+}
+
+/* Header: lenguaje + botón copiar */
+.code-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.35rem 0.875rem;
+  background: #f3f4f6;
+  border-bottom: 1px solid #e2e4e9;
+}
+.dark .code-block-header {
+  background: #161b22;
+  border-color: #30363d;
+}
+
+.code-block-lang-label {
+  font-family: var(--font-geist-mono, ui-monospace, monospace);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #6b7280;
+}
+.dark .code-block-lang-label {
+  color: #8b949e;
+}
+
+/* Botón copiar */
+.code-block-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.7rem;
+  font-family: var(--font-geist-sans, system-ui, sans-serif);
+  font-weight: 500;
+  color: #6b7280;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0.2rem 0.5rem;
+  border-radius: 0.3rem;
+  transition: color 0.15s, background 0.15s;
+  line-height: 1;
+}
+.code-block-copy-btn:hover {
+  color: #374151;
+  background: #e5e7eb;
+}
+.dark .code-block-copy-btn {
+  color: #6e7681;
+}
+.dark .code-block-copy-btn:hover {
+  color: #c9d1d9;
+  background: #21262d;
+}
+
+/* El pre/code generado por Shiki */
+/* Doble selector para ganar especificidad frente al reset del prose */
+.code-block-inner .shiki,
+.prose .code-block-inner .shiki {
+  margin: 0 !important;
+  padding: 1rem !important;
+  border-radius: 0 !important;
+  overflow-x: auto !important;
+  font-family: var(--font-geist-mono, "JetBrains Mono", ui-monospace, monospace) !important;
+  font-size: 0.9rem !important;
+  line-height: 1.65 !important;
+  tab-size: 2 !important;
+  background: #fafafa !important;
+  font-variant-ligatures: none !important;
+  font-feature-settings: "calt" 0, "liga" 0 !important;
+}
+.dark .code-block-inner .shiki,
+.dark .prose .code-block-inner .shiki {
+  background: var(--shiki-dark-bg, #0d1117) !important;
+}
+
+/* Reset del prose sobre pre */
+.prose .code-block-wrapper pre,
+.prose .code-block-inner pre {
+  margin: 0 !important;
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  padding: 0 !important;
+}
+
+/* ─── Shiki transformers ─────────────────────────────────── */
+
+/* Diff: líneas añadidas / eliminadas */
+.code-block-inner .shiki .line.diff.add {
+  background-color: rgba(70, 149, 74, 0.15);
+}
+.code-block-inner .shiki .line.diff.add::before {
+  content: "+";
+  margin-right: 0.5rem;
+  color: #3fb950;
+  font-weight: 700;
+}
+.code-block-inner .shiki .line.diff.remove {
+  background-color: rgba(248, 81, 73, 0.12);
+  opacity: 0.7;
+}
+.code-block-inner .shiki .line.diff.remove::before {
+  content: "-";
+  margin-right: 0.5rem;
+  color: #f85149;
+  font-weight: 700;
+}
+
+/* Highlight: línea resaltada */
+.code-block-inner .shiki .line.highlighted {
+  background-color: rgba(197, 255, 0, 0.08);
+  border-left: 2px solid #c5ff00;
+  padding-left: calc(1rem - 2px);
+  margin-left: -1rem;
+  padding-right: 1rem;
+  margin-right: -1rem;
+}
+
+/* Focus: resto de líneas atenuadas cuando hay focus */
+.code-block-inner .shiki:has(.focused) .line:not(.focused) {
+  opacity: 0.35;
+  transition: opacity 0.2s;
+}
+.code-block-inner .shiki:has(.focused):hover .line:not(.focused) {
+  opacity: 0.8;
+}
+.code-block-inner .shiki .line.focused {
+  opacity: 1;
+}
+
+/* Error level */
+.code-block-inner .shiki .line.error {
+  background-color: rgba(248, 81, 73, 0.1);
+  border-left: 2px solid #f85149;
+}
+.code-block-inner .shiki .line.warning {
+  background-color: rgba(210, 153, 34, 0.1);
+  border-left: 2px solid #e3b341;
+}
+
+/* ─── Responsive prose ──────────────────────────────────── */
+
+/* Tablas: scroll horizontal en pantallas pequeñas */
+.prose table {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  white-space: nowrap;
+}
+.prose table thead tr th,
+.prose table tbody tr td {
+  padding: 0.5rem 0.875rem;
+  border: 1px solid var(--prose-hr);
+  font-size: 0.875rem;
+}
+.prose table thead tr th {
+  background: color-mix(in srgb, var(--prose-hr) 40%, transparent);
+  font-weight: 600;
+  text-align: left;
+}
+
+/* Código con scroll horizontal */
+.prose pre,
+.code-block-inner .shiki {
+  overflow-x: auto;
+}
+
+/* Headings más pequeños en mobile */
+@media (max-width: 640px) {
+  .prose h1 {
+    font-size: 1.5rem;
+  }
+  .prose h2 {
+    font-size: 1.2rem;
+  }
+  .prose h3 {
+    font-size: 1.05rem;
+  }
+}

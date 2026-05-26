@@ -1,0 +1,128 @@
+---
+titulo: "Examen Transversal: Proyecto Integrador"
+descripcion: "Desarrollo de una aplicación completa con React + TypeScript integrando todos los conocimientos del programa."
+duracion: "Entrega final"
+semana: 11
+objetivos:
+  - "Integrar todos los conocimientos adquiridos en las 10 semanas anteriores"
+  - "Construir una aplicación React + TypeScript de complejidad real"
+  - "Demostrar el uso correcto de tipado, estado global, routing y consumo de APIs"
+  - "Aplicar buenas prácticas de testing y calidad de código"
+  - "Presentar y defender las decisiones técnicas tomadas"
+recursos:
+  - nombre: "Repositorio de referencia del programa"
+    url: "https://github.com/abecerraguz"
+---
+
+> **🎯 Objetivo de la semana:** Demostrar el dominio de React + TypeScript construyendo una aplicación completa desde cero, con tipado correcto, estado global, routing, consumo de API y tests.
+>
+> **🔑 Concepto clave:** Arquitectura frontend — cómo tomar decisiones técnicas justificadas: qué herramienta de estado usar, cómo organizar las carpetas, cuándo dividir un componente, cómo separar responsabilidades.
+>
+> **🛠 Tarea práctica:** Construir la aplicación del examen integrando todo lo construido semana a semana — una app React + TypeScript completa con los requisitos listados abajo.
+>
+> **📋 Entregable:** Repositorio GitHub con README completo + presentación de 10-15 minutos defendiendo las decisiones de arquitectura.
+
+---
+
+## Descripción del examen
+
+Llegaste hasta aquí. Ocho semanas de TypeScript, React, hooks, Context, estado global, routing, APIs y tests. El examen transversal no es una prueba más — es el momento de integrar todo eso en una sola aplicación que funciona de verdad.
+
+El examen consiste en el desarrollo de una **aplicación web completa** con React + TypeScript durante la semana. Al finalizar se realiza una presentación técnica donde cada estudiante explica y defiende sus decisiones de diseño y arquitectura. No se evalúa que uses las herramientas más complejas — se evalúa que uses las correctas para el problema y puedas justificar por qué.
+
+
+## Requisitos técnicos obligatorios
+
+### Arquitectura y tipado
+- Proyecto configurado con Vite + React + TypeScript en modo `strict`
+- Mínimo **10 interfaces o tipos** definidos y utilizados en el código
+- Sin uso de `any` en todo el proyecto
+- Archivos de tipos organizados en `src/types/`
+
+### Componentes y estado
+- Mínimo **8 componentes** funcionales con props tipadas
+- Al menos **1 Context API** con hook personalizado
+- Al menos **1 custom hook** reutilizable
+- Manejo de estado local con `useState` y `useReducer`
+
+### Routing
+- Mínimo **4 rutas** configuradas con React Router v6
+- Al menos **1 ruta protegida** que requiera autenticación
+- Manejo de ruta 404 personalizada
+
+### Consumo de datos
+- Integración con al menos **1 API real o mock**
+- Manejo de estados `loading`, `error` y `data`
+- Se recomienda TanStack Query para el manejo del servidor
+
+### Testing
+- Mínimo **5 tests** (unitarios o de componentes)
+- Al menos 1 test con mock de servicio externo
+
+---
+
+## Criterios de evaluación
+
+### Calidad del tipado (25%)
+- Uso correcto de generics, utility types y discriminated unions
+- Ausencia de `any` y uso apropiado de `unknown`
+- Tipos bien nombrados y reutilizados
+
+### Arquitectura del proyecto (25%)
+- Separación adecuada de responsabilidades
+- Organización de carpetas coherente (components, hooks, services, types, pages)
+- Componentes de tamaño apropiado (Single Responsibility)
+
+### Funcionalidad (30%)
+- La aplicación funciona correctamente sin errores en consola
+- Manejo adecuado de casos borde (datos vacíos, errores de red)
+- UX: estados de carga y mensajes de error visibles
+
+### Testing y buenas prácticas (20%)
+- Tests que verifican comportamiento real, no implementación
+- Código limpio: sin código comentado, sin console.logs en producción
+- README con instrucciones de instalación y uso
+
+---
+
+## Rúbrica de calificación
+
+| Criterio | Insuficiente (1) | Suficiente (2) | Destacado (3) |
+|----------|-----------------|----------------|---------------|
+| Tipado TypeScript | Usa `any` frecuentemente | Tipado básico correcto | Generics, utility types avanzados |
+| Componentes | Sin estructura clara | Props tipadas, sin composición | Patrones avanzados (Compound, HOC) |
+| Estado global | Solo useState local | Context API funcional | Redux/Zustand con thunks |
+| Routing | Rutas básicas | Rutas protegidas | Lazy loading, estado en URL |
+| API / Datos | Fetch sin tipado | Fetch tipado, manejo errores | TanStack Query, capa de servicios |
+| Tests | Sin tests | Tests básicos | Mocks, cobertura > 70% |
+
+---
+
+## Resumen del programa
+
+| Semana | Tema | Horas |
+|--------|------|-------|
+| S1 | Fundamentos de TypeScript | 8h |
+| S2 | React + TypeScript: Primeros pasos | 8h |
+| S3 | Hooks con TypeScript | 8h |
+| S4 | Componentes avanzados y Context API | 8h |
+| S5 | Gestión de estado global | 8h |
+| S6 | React Router con TypeScript | 8h |
+| S7 | Consumo de APIs y datos asíncronos | 8h |
+| S8 | Testing y buenas prácticas | 8h |
+| S9 | **Examen Transversal** | Entrega final |
+| **Total** | | **64h** |
+
+> Entrega: repositorio GitHub con README completo + presentación de 10-15 minutos al instructor.
+
+---
+
+## 📋 Entregable final
+
+Para considerar completado el programa, tu proyecto de examen debe incluir:
+
+- [ ] **Repositorio GitHub público**: Con todos los commits del proceso de desarrollo — no un solo commit con todo el código al final.
+- [ ] **README completo**: Instrucciones de instalación (`npm install`, `npm run dev`), descripción de la app, decisiones técnicas principales y capturas de pantalla.
+- [ ] **`npm run build` sin errores**: La aplicación compila en modo producción. `npm run test` pasa todos los tests.
+- [ ] **Demo funcional**: Puedes mostrar la app corriendo localmente y navegar por todas las páginas sin errores en consola.
+- [ ] **Presentación técnica**: 10-15 minutos donde explicas: (1) qué hace la app, (2) qué herramienta de estado elegiste y por qué, (3) cómo organizaste las carpetas, (4) qué testeas y por qué esos casos.

@@ -1,0 +1,123 @@
+[
+  {
+    "slug": "semana-01",
+    "numero": 1,
+    "titulo": "Fundamentos de TypeScript",
+    "descripcion": "Tipos básicos, interfaces, genéricos y configuración del entorno de desarrollo con TypeScript.",
+    "categoria": "fundamentos",
+    "tecnologias": ["TypeScript", "VS Code", "Node.js"],
+    "duracion": "8h",
+    "disponible": true,
+    "esExamen": false
+  },
+  {
+    "slug": "semana-02",
+    "numero": 2,
+    "titulo": "React + TypeScript: Primeros pasos",
+    "descripcion": "Configuración con Vite, componentes funcionales tipados, props con interfaces y JSX con TypeScript.",
+    "categoria": "fundamentos",
+    "tecnologias": ["React", "TypeScript", "Vite"],
+    "duracion": "8h",
+    "disponible": true,
+    "esExamen": false
+  },
+  {
+    "slug": "semana-03",
+    "numero": 3,
+    "titulo": "Hooks con TypeScript",
+    "descripcion": "useState, useEffect, useRef, useMemo y useCallback completamente tipados con TypeScript.",
+    "categoria": "hooks",
+    "tecnologias": ["React", "TypeScript"],
+    "duracion": "8h",
+    "disponible": true,
+    "esExamen": false
+  },
+  {
+    "slug": "semana-04",
+    "numero": 4,
+    "titulo": "Componentes avanzados y Context API",
+    "descripcion": "Patrones de componentes, children tipados, Context API con TypeScript y composición avanzada.",
+    "categoria": "componentes",
+    "tecnologias": ["React", "TypeScript", "Context API"],
+    "duracion": "8h",
+    "disponible": true,
+    "esExamen": false
+  },
+  {
+    "slug": "semana-05",
+    "numero": 5,
+    "titulo": "Gestión de estado global",
+    "descripcion": "useReducer tipado, Redux Toolkit con TypeScript y Zustand como alternativa moderna.",
+    "categoria": "estado",
+    "tecnologias": ["React", "Redux Toolkit", "Zustand", "TypeScript"],
+    "duracion": "8h",
+    "disponible": true,
+    "esExamen": false
+  },
+  {
+    "slug": "semana-06",
+    "numero": 6,
+    "titulo": "React Router con TypeScript",
+    "descripcion": "Navegación con React Router v6, rutas protegidas, parámetros tipados y navegación programática.",
+    "categoria": "routing",
+    "tecnologias": ["React Router v6", "TypeScript"],
+    "duracion": "8h",
+    "disponible": true,
+    "esExamen": false
+  },
+  {
+    "slug": "semana-07",
+    "numero": 7,
+    "titulo": "Consumo de APIs y datos asíncronos",
+    "descripcion": "Fetch y Axios tipados, TanStack Query, manejo de errores y tipado de respuestas de API.",
+    "categoria": "apis",
+    "tecnologias": ["Fetch API", "Axios", "TanStack Query", "TypeScript"],
+    "duracion": "8h",
+    "disponible": true,
+    "esExamen": false
+  },
+  {
+    "slug": "semana-08",
+    "numero": 8,
+    "titulo": "Backend CRUD completo con Express y multer",
+    "descripcion": "Endpoints POST, PUT y DELETE tipados con Express + PostgreSQL, arquitectura MVC y subida de archivos con multer.",
+    "categoria": "backend",
+    "tecnologias": ["Express", "PostgreSQL", "multer", "TypeScript"],
+    "duracion": "8h",
+    "disponible": true,
+    "esExamen": false
+  },
+  {
+    "slug": "semana-09",
+    "numero": 9,
+    "titulo": "Panel admin CRUD conectado a la API",
+    "descripcion": "useMutation de TanStack Query, formularios wired a la API real, subida de imágenes desde el navegador y sincronización del estado global.",
+    "categoria": "fullstack",
+    "tecnologias": ["React", "TanStack Query", "Zustand", "FormData", "TypeScript"],
+    "duracion": "8h",
+    "disponible": true,
+    "esExamen": false
+  },
+  {
+    "slug": "semana-10",
+    "numero": 10,
+    "titulo": "Testing y buenas prácticas",
+    "descripcion": "Vitest y React Testing Library con TypeScript, mocks tipados y cobertura de código.",
+    "categoria": "testing",
+    "tecnologias": ["Vitest", "React Testing Library", "TypeScript"],
+    "duracion": "8h",
+    "disponible": true,
+    "esExamen": false
+  },
+  {
+    "slug": "semana-11",
+    "numero": 11,
+    "titulo": "Examen Transversal: Proyecto Integrador",
+    "descripcion": "Desarrollo de una aplicación completa con React + TypeScript integrando todos los conocimientos del programa.",
+    "categoria": "examen",
+    "tecnologias": ["React", "TypeScript", "Vite", "Express", "PostgreSQL"],
+    "duracion": "Entrega final",
+    "disponible": true,
+    "esExamen": true
+  }
+]

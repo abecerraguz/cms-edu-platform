@@ -1,0 +1,547 @@
+---
+titulo: "Componentes avanzados y Context API"
+descripcion: "Patrones de componentes, children tipados, Context API con TypeScript y composición avanzada."
+duracion: "8h"
+semana: 4
+objetivos:
+  - "Aplicar patrones avanzados de composición de componentes"
+  - "Crear y consumir Context API completamente tipado con TypeScript"
+  - "Usar React.memo para optimizar renders con tipos correctos"
+  - "Implementar el patrón Compound Components con TypeScript"
+  - "Tipar correctamente forwardRef para exponer refs de componentes hijos"
+recursos:
+  - nombre: "React - Context API"
+    url: "https://react.dev/learn/passing-data-deeply-with-context"
+  - nombre: "React - forwardRef"
+    url: "https://react.dev/reference/react/forwardRef"
+---
+
+> **🎯 Objetivo de la semana:** Al terminar sabrás crear contextos tipados con TypeScript para compartir estado global sin props drilling, memoizar componentes para evitar re-renders innecesarios y componer interfaces flexibles con Compound Components y `forwardRef`.
+>
+> **🔑 Concepto clave:** Context API — cuando múltiples componentes sin relación directa necesitan el mismo dato, Context crea un canal directo que evita pasar props nivel por nivel a través de componentes intermedios que no los usan.
+>
+> **🛠 Tarea práctica:** Crear `TemaContext` (tema oscuro/claro que persiste en `localStorage`), `AuthContext` (login simulado) y el formulario `NuevoArticulo` con `useReducer` para el panel admin del blog.
+>
+> **📋 Entregable:** Tu app muestra: (1) toggle de tema oscuro/claro funcional, (2) formulario de nueva publicación con validación, (3) el panel admin solo accesible tras iniciar sesión.
+
+---
+
+## 1. Context API con TypeScript
+
+Imagina esta situación: el componente `Header` necesita mostrar el nombre del usuario. El `AdminSidebar` necesita saber su rol. La `NotificationBar` necesita saber si está autenticado. Los tres viven en ramas distintas del árbol de componentes — no son padre e hijo directo. La solución naive es pasar esos datos como props desde el ancestor común hacia abajo: `App` → `Layout` → `Section` → cada componente. Los intermedios reciben props que no usan, solo para transmitirlas. Eso se llama **props drilling** y es exactamente lo que Context API resuelve.
+
+Un contexto es un canal directo: el `Provider` envuelve el árbol y cualquier componente dentro puede leer los datos sin importar cuán profundo esté.
+
+El patrón correcto en TypeScript tiene cuatro piezas: el tipo, el contexto, el provider y el hook consumidor:
+
+```tsx
+// 1. Tipo del contexto — define el contrato completo
+interface AuthContextType {
+  usuario: Usuario | null;
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => void;
+}
+
+// 2. Crear con undefined como valor por defecto — el hook lo valida
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+// 3. Hook personalizado — lanza error claro si se usa fuera del Provider
+export function useAuth(): AuthContextType {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth debe usarse dentro de AuthProvider");
+  return ctx;
+}
+
+// 4. Provider — encapsula el estado y las acciones
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [usuario, setUsuario] = useState<Usuario | null>(null);
+
+  const login = async (email: string, password: string) => {
+    const user = await authService.login(email, password);
+    setUsuario(user);
+  };
+
+  const logout = () => setUsuario(null);
+
+  return (
+    <AuthContext.Provider value={{ usuario, login, logout }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+```
+
+¿Por qué `createContext<TipoContexto | undefined>(undefined)` en lugar de un valor por defecto directo? Porque así el hook `useAuth` detecta si el consumidor olvidó envolver la app con el Provider y lanza un error descriptivo — en lugar de fallar silenciosamente con datos vacíos o incorrectos.
+
+Una regla práctica: si el estado cambia más de un par de veces por segundo (posición del mouse, scroll), Context no es la herramienta correcta — provoca demasiados re-renders. Para esos casos, `useRef` o Zustand.
+
+## 2. React.memo y optimización de renders
+
+React re-renderiza un componente cada vez que su padre re-renderiza, independientemente de si las props cambiaron. En la mayoría de los casos eso es inofensivo — React es muy rápido en el diffing. El problema aparece en listas largas: si tienes 200 `ArticuloCard` en la página y el componente padre actualiza cualquier estado, los 200 se re-renderizan en cascade aunque ninguno de sus artículos cambió.
+
+`React.memo` envuelve el componente y le dice a React: "solo re-renderiza si las props cambiaron". La comparación es shallow por referencia:
+
+```tsx
+// React.memo — la interfaz se mantiene exactamente igual
+interface ArticuloCardProps {
+  articulo: ArticuloListado;
+  onEliminar: (id: number) => void;
+}
+
+// El componente solo re-renderiza si articulo u onEliminar cambian de referencia
+const ArticuloCard = React.memo(function ArticuloCard({ articulo, onEliminar }: ArticuloCardProps) {
+  return (
+    <div className="post-card">
+      <h3>{articulo.titulo}</h3>
+      <button onClick={() => onEliminar(articulo.id)}>Eliminar</button>
+    </div>
+  );
+});
+```
+
+Hay una trampa clásica: si el padre pasa `onEliminar` como `() => handleEliminar(id)` (función anónima inline), se crea una nueva referencia en cada render — y `React.memo` ve props distintas aunque el comportamiento sea idéntico. La solución es `useCallback`:
+
+```tsx
+// ❌ Nueva función en cada render → React.memo no puede optimizar
+<ArticuloCard onEliminar={(id) => eliminar(id)} />
+
+// ✅ Referencia estable → React.memo funciona correctamente
+const handleEliminar = useCallback((id: number) => eliminar(id), []);
+<ArticuloCard onEliminar={handleEliminar} />
+```
+
+Úsalo con criterio: `React.memo` agrega overhead de comparación. Solo vale la pena en componentes que reciben props estables y son costosos de renderizar — no lo pongas en todos los componentes por defecto.
+
+## 3. Children tipados y composición
+
+El prop `children` es el mecanismo de composición más fundamental de React. Le permite a `<Layout>` no saber nada sobre su contenido — simplemente lo renderiza donde corresponde. En TypeScript hay tres tipos relevantes para children, y elegir el incorrecto genera errores sutiles:
+
+- **`React.ReactNode`**: cualquier cosa que React puede renderizar — strings, elementos, arrays, `null`, portals. Úsalo casi siempre.
+- **`React.ReactElement`**: un elemento JSX específico (el resultado de `<Componente />`). Más restrictivo — no acepta strings ni `null`.
+- **`JSX.Element`**: alias de `React.ReactElement` que viene del namespace JSX.
+
+```tsx
+// Layout con children — ReactNode es la opción correcta aquí
+interface LayoutProps {
+  titulo: string;
+  children: React.ReactNode;    // acepta cualquier cosa renderizable
+  footer?: React.ReactElement;  // solo acepta un elemento JSX, no strings
+}
+
+function Layout({ titulo, children, footer }: LayoutProps) {
+  return (
+    <div>
+      <h1>{titulo}</h1>
+      <main>{children}</main>
+      {footer}
+    </div>
+  );
+}
+```
+
+El **patrón render props** lleva la composición un paso más lejos: en lugar de renderizar `children` directamente, el padre pasa una función que el hijo llama con sus datos internos:
+
+```tsx
+// Render props genérico — el hijo controla cuándo y con qué datos renderizar
+interface ListaProps<T> {
+  items: T[];
+  renderItem: (item: T, index: number) => React.ReactNode;
+  renderVacio?: () => React.ReactNode;
+}
+
+function Lista<T>({ items, renderItem, renderVacio }: ListaProps<T>) {
+  if (items.length === 0) return <>{renderVacio?.() ?? <p>Sin elementos</p>}</>;
+  return <ul>{items.map((item, i) => <li key={i}>{renderItem(item, i)}</li>)}</ul>;
+}
+
+// El consumidor decide cómo renderizar cada ítem
+<Lista
+  items={articulos}
+  renderItem={(a) => <ArticuloCard articulo={a} />}
+  renderVacio={() => <p>No hay artículos publicados aún.</p>}
+/>
+```
+
+## 4. Compound Components con TypeScript
+
+Los compound components son la diferencia entre una API rígida y una API flexible. Piensa en la relación entre `<select>` y `<option>`: `select` controla qué está seleccionado, `option` solo declara las opciones. Los dos trabajan juntos y el desarrollador decide la estructura visual.
+
+En React, el patrón funciona con un contexto interno compartido entre el componente raíz y sus sub-componentes:
+
+```tsx
+// Contexto interno — privado para los sub-componentes
+interface TabsContextType {
+  activeTab: string;
+  setActiveTab: (tab: string) => void;
+}
+
+const TabsContext = createContext<TabsContextType | undefined>(undefined);
+
+// Raíz — controla el estado
+function Tabs({ children, defaultTab }: { children: React.ReactNode; defaultTab: string }) {
+  const [activeTab, setActiveTab] = useState(defaultTab);
+  return (
+    <TabsContext.Provider value={{ activeTab, setActiveTab }}>
+      <div>{children}</div>
+    </TabsContext.Provider>
+  );
+}
+
+// Sub-componentes adjuntos como propiedades del padre
+Tabs.List = function TabList({ children }: { children: React.ReactNode }) {
+  return <div role="tablist">{children}</div>;
+};
+
+Tabs.Tab = function Tab({ id, children }: { id: string; children: React.ReactNode }) {
+  const { activeTab, setActiveTab } = useContext(TabsContext)!;
+  return (
+    <button
+      role="tab"
+      aria-selected={activeTab === id}
+      onClick={() => setActiveTab(id)}
+    >
+      {children}
+    </button>
+  );
+};
+
+// Uso — la estructura es visible en el JSX, no hay que imaginarla
+<Tabs defaultTab="publicados">
+  <Tabs.List>
+    <Tabs.Tab id="publicados">Publicados</Tabs.Tab>
+    <Tabs.Tab id="borradores">Borradores</Tabs.Tab>
+  </Tabs.List>
+</Tabs>
+```
+
+La ventaja frente a pasar arrays de configuración como props es que la estructura es declarativa — está visible en el JSX en lugar de estar escondida en datos.
+
+## 5. forwardRef con TypeScript
+
+Hay situaciones donde un componente padre necesita acceder directamente a un elemento del DOM que vive dentro de un componente hijo. El caso más concreto en el CMS: cuando el formulario de nueva publicación detecta un error de validación, quieres llamar `.focus()` en el input del campo con problema. Pero si `Input` es un componente React, la ref apunta al componente — no al `<input>` del DOM.
+
+`forwardRef` soluciona esto: el componente recibe el ref como segundo argumento y lo pasa al elemento correcto:
+
+```tsx
+// forwardRef<TipoDelRef, TipoDeLasProps>
+interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
+  label: string;
+  error?: string;
+}
+
+const Input = React.forwardRef<HTMLInputElement, InputProps>(
+  ({ label, error, ...props }, ref) => (
+    <div className="admin-form__group">
+      <label className="admin-form__label">{label}</label>
+      <input ref={ref} className="form-control" {...props} />
+      {error && <span className="admin-form__error">{error}</span>}
+    </div>
+  )
+);
+
+// Siempre define displayName — aparece en React DevTools para depuración
+Input.displayName = "Input";
+
+// El padre puede enfocar el input directamente
+const tituloRef = useRef<HTMLInputElement>(null);
+
+<Input
+  ref={tituloRef}
+  label="Título"
+  error={errors.titulo}
+  placeholder="Escribe un título atractivo"
+/>
+
+// Enfocar el primer campo con error al intentar enviar
+if (errors.titulo) tituloRef.current?.focus();
+```
+
+`extends React.InputHTMLAttributes<HTMLInputElement>` significa que `Input` acepta todos los atributos HTML estándar de un `<input>` (placeholder, type, required, disabled, etc.) además de los propios. El spread `{...props}` los pasa al elemento del DOM — no tienes que declararlos uno a uno.
+
+---
+
+## Actividades prácticas
+
+**Actividad 1 — AuthProvider con Context (75 min)**
+Implementar un `AuthProvider` con login/logout simulado. Crear componentes `Header` y `PerfilUsuario` que consuman el contexto mediante `useAuth`.
+
+**Actividad 2 — Compound Component (60 min)**
+Crear un componente `Acordeon` usando el patrón Compound Component con `Acordeon.Item`, `Acordeon.Trigger` y `Acordeon.Content`.
+
+**Actividad 3 — Input con forwardRef (45 min)**
+Crear un componente `FormInput` con soporte para `ref`, `label` y `error`. Usarlo en un formulario que enfoque automáticamente el primer campo con error.
+
+---
+
+## 🛠 Proyecto CMS — Semana 4: Formulario con useReducer, tema oscuro y contexto de autenticación
+
+Esta semana añades la infraestructura de estado que necesitarás para el panel admin: el formulario de nueva publicación con `useReducer`, el modo oscuro/claro con contexto, y el contexto de autenticación para proteger las rutas admin.
+
+### Paso 1 — `useReducer` para el formulario de nueva publicación
+
+El formulario `admin_insertar.html` tiene cuatro campos: título, resumen, contenido e imagen. Con cuatro `useState` independientes el componente se llena de setters. `useReducer` centraliza el estado del formulario en una sola función predecible.
+
+```ts
+// src/hooks/useFormularioArticulo.ts
+import { useReducer } from "react";
+import type { NuevoArticulo } from "@/types";
+
+type CamposFormulario = Omit<NuevoArticulo, "autorId">;
+
+type AccionFormulario =
+  | { type: "SET_CAMPO"; campo: keyof CamposFormulario; valor: string }
+  | { type: "RESET" };
+
+const estadoInicial: CamposFormulario = {
+  titulo: "",
+  extracto: "",
+  contenido: "",
+  imagen: "",
+  categoriaId: 0,
+  estado: "borrador",
+};
+
+function reducirFormulario(
+  state: CamposFormulario,
+  accion: AccionFormulario
+): CamposFormulario {
+  switch (accion.type) {
+    case "SET_CAMPO":
+      return { ...state, [accion.campo]: accion.valor };
+    case "RESET":
+      return estadoInicial;
+    default:
+      return state;
+  }
+}
+
+export function useFormularioArticulo() {
+  const [campos, dispatch] = useReducer(reducirFormulario, estadoInicial);
+
+  function setCampo(campo: keyof CamposFormulario, valor: string) {
+    dispatch({ type: "SET_CAMPO", campo, valor });
+  }
+
+  function reset() {
+    dispatch({ type: "RESET" });
+  }
+
+  const esValido = campos.titulo.trim().length >= 3;
+
+  return { campos, setCampo, reset, esValido };
+}
+```
+
+Úsalo en `src/pages/admin/NuevoArticulo.tsx` (replica `admin_insertar.html`):
+
+```tsx
+// src/pages/admin/NuevoArticulo.tsx
+import { FormEvent } from "react";
+import { useFormularioArticulo } from "@/hooks/useFormularioArticulo";
+
+export function NuevoArticulo() {
+  const { campos, setCampo, reset, esValido } = useFormularioArticulo();
+
+  function handleSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    // Semana 7: aquí llamarás a articulosService.crear(campos)
+    console.log("Datos del formulario:", campos);
+    reset();
+  }
+
+  return (
+    <main className="admin-page">
+      <div className="container">
+        <nav className="breadcrumb">
+          <a href="/admin"><i className="bi bi-house" /> Panel</a>
+          <span>/</span>
+          <span>Nueva Publicación</span>
+        </nav>
+
+        <form onSubmit={handleSubmit} className="admin-form">
+          <h2 className="admin-form__title">
+            <i className="bi bi-plus-circle" /> Nueva Publicación
+          </h2>
+
+          <div className="admin-form__group">
+            <label htmlFor="titulo" className="admin-form__label">
+              <i className="bi bi-card-text" /> Título <span className="admin-form__required">*</span>
+            </label>
+            <input
+              id="titulo"
+              type="text"
+              className="form-control"
+              value={campos.titulo}
+              onChange={(e) => setCampo("titulo", e.target.value)}
+              placeholder="Escribe un título atractivo"
+              required
+            />
+          </div>
+
+          <div className="admin-form__group">
+            <label htmlFor="extracto" className="admin-form__label">
+              <i className="bi bi-text-left" /> Resumen
+            </label>
+            <textarea
+              id="extracto"
+              className="form-control"
+              rows={3}
+              value={campos.extracto}
+              onChange={(e) => setCampo("extracto", e.target.value)}
+              placeholder="Breve resumen de la publicación"
+            />
+          </div>
+
+          <div className="admin-form__group">
+            <label htmlFor="contenido" className="admin-form__label">
+              <i className="bi bi-body-text" /> Contenido
+            </label>
+            <textarea
+              id="contenido"
+              className="form-control"
+              rows={6}
+              value={campos.contenido}
+              onChange={(e) => setCampo("contenido", e.target.value)}
+              placeholder="Contenido completo de la publicación"
+            />
+          </div>
+
+          <div className="admin-form__actions">
+            <button type="submit" className="btn btn--primary" disabled={!esValido}>
+              <i className="bi bi-check-circle" /> Guardar Publicación
+            </button>
+            <a href="/admin" className="btn btn--secondary">
+              <i className="bi bi-x-circle" /> Cancelar
+            </a>
+          </div>
+        </form>
+      </div>
+    </main>
+  );
+}
+```
+
+`useReducer` es `useState` con acciones nombradas. Cuando el formulario crece (10+ campos, validaciones, envío), el reducer hace que cada cambio sea explícito y trazable.
+
+### Paso 2 — TemaContext (modo oscuro/claro)
+
+Crea un contexto para el tema visual que persiste la preferencia en `localStorage`:
+
+```tsx
+// src/context/TemaContext.tsx
+import { createContext, useContext, useEffect, useState } from "react";
+
+type Tema = "claro" | "oscuro";
+
+interface TemaContextType {
+  tema: Tema;
+  toggleTema: () => void;
+}
+
+const TemaContext = createContext<TemaContextType | undefined>(undefined);
+
+export function TemaProvider({ children }: { children: React.ReactNode }) {
+  const [tema, setTema] = useState<Tema>(() => {
+    // Inicializa desde localStorage o preferencia del sistema
+    const guardado = localStorage.getItem("tema") as Tema | null;
+    if (guardado) return guardado;
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "oscuro" : "claro";
+  });
+
+  useEffect(() => {
+    localStorage.setItem("tema", tema);
+    document.documentElement.setAttribute("data-theme", tema);
+  }, [tema]);
+
+  const toggleTema = () => setTema((prev) => (prev === "claro" ? "oscuro" : "claro"));
+
+  return (
+    <TemaContext.Provider value={{ tema, toggleTema }}>
+      {children}
+    </TemaContext.Provider>
+  );
+}
+
+export function useTema(): TemaContextType {
+  const ctx = useContext(TemaContext);
+  if (!ctx) throw new Error("useTema debe usarse dentro de TemaProvider");
+  return ctx;
+}
+```
+
+### Paso 3 — AuthContext para el panel admin
+
+Prepara el contexto de autenticación que usarás en la Semana 6 para proteger las rutas del panel admin. Por ahora el login es simulado:
+
+```tsx
+// src/context/AuthContext.tsx
+import { createContext, useContext, useState } from "react";
+import type { Usuario } from "@/types";
+
+interface AuthContextType {
+  usuario: Usuario | null;
+  isAuthenticated: boolean;
+  login: (email: string, password: string) => Promise<boolean>;
+  logout: () => void;
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [usuario, setUsuario] = useState<Usuario | null>(null);
+
+  // Semana 7 reemplazará esto con una llamada real a la API
+  const login = async (email: string, password: string): Promise<boolean> => {
+    if (email === "admin@blog.com" && password === "admin123") {
+      setUsuario({ id: 1, nombre: "Administrador", email, rol: "admin" });
+      return true;
+    }
+    return false;
+  };
+
+  const logout = () => setUsuario(null);
+
+  return (
+    <AuthContext.Provider value={{ usuario, isAuthenticated: !!usuario, login, logout }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export function useAuth(): AuthContextType {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth debe usarse dentro de AuthProvider");
+  return ctx;
+}
+```
+
+Envuelve la app en `main.tsx` con ambos providers:
+
+```tsx
+// src/main.tsx
+import { TemaProvider } from "@/context/TemaContext";
+import { AuthProvider } from "@/context/AuthContext";
+
+ReactDOM.createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
+    <TemaProvider>
+      <AuthProvider>
+        <App />
+      </AuthProvider>
+    </TemaProvider>
+  </React.StrictMode>
+);
+```
+
+> **Para la próxima semana**: Con los contextos listos, en la Semana 5 construirás el estado del panel admin — la tabla de artículos con búsqueda, filtros y acciones CRUD usando `useReducer` y Zustand.
+
+---
+
+## 📋 Entregable de la semana
+
+Para considerar completada la Semana 4, tu app debe demostrar:
+
+- [ ] **TemaContext funcional**: El toggle de tema oscuro/claro alterna la apariencia y la preferencia persiste en `localStorage` — si recargas la página, el tema se mantiene.
+- [ ] **AuthContext funcional**: Existe un login simulado. Al ingresar con `admin@blog.com` / `admin123` aparece el panel admin; al hacer logout vuelves al estado desautenticado.
+- [ ] **Formulario `NuevoArticulo` con `useReducer`**: El formulario con los campos de `admin_insertar.html` (título, resumen, contenido) está implementado. El botón "Guardar" solo se activa cuando el título tiene al menos 3 caracteres.
+- [ ] **Sin errores TypeScript**: `npm run build` compila sin errores. No hay `any` en el código que escribiste esta semana.

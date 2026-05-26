@@ -1,0 +1,432 @@
+---
+titulo: "React Router con TypeScript"
+descripcion: "Navegación con React Router v6, rutas protegidas, parámetros tipados y navegación programática."
+duracion: "8h"
+semana: 6
+objetivos:
+  - "Configurar React Router v6 en un proyecto TypeScript"
+  - "Tipar correctamente los parámetros de ruta con useParams"
+  - "Implementar rutas protegidas con Context de autenticación tipado"
+  - "Usar useNavigate para navegación programática tipada"
+  - "Implementar rutas lazy con React.lazy y Suspense"
+recursos:
+  - nombre: "React Router v6 - Documentación"
+    url: "https://reactrouter.com/en/main"
+  - nombre: "React Router TypeScript Guide"
+    url: "https://reactrouter.com/en/main/start/tutorial"
+---
+
+> **🎯 Objetivo de la semana:** Al terminar sabrás configurar React Router v6 para navegar entre páginas con URLs reales, leer parámetros dinámicos de la URL, proteger rutas por autenticación y cargar módulos bajo demanda con code splitting.
+>
+> **🔑 Concepto clave:** Enrutamiento client-side — cómo un SPA simula múltiples páginas sin recargar el navegador, interceptando los cambios de URL del navegador y renderizando el componente correspondiente.
+>
+> **🛠 Tarea práctica:** Conectar todas las páginas del CMS con rutas reales: `/` (blog público), `/articulo/:slug` (detalle), `/admin/login`, `/admin` (listado), `/admin/nuevo`, `/admin/editar/:slug`.
+>
+> **📋 Entregable:** Puedes navegar con URLs reales entre la página pública, el detalle de un artículo y el panel admin. El panel admin redirige a `/admin/login` si no estás autenticado. Las rutas admin cargan como chunks separados verificables en el Network tab.
+>
+> **⚠️ Nota importante — `:slug` en lugar de `:id`:** La ruta de edición usa `/admin/editar/:slug` (no `:id`). Un `slug` es una cadena como `mi-primer-articulo` que identifica el artículo de forma legible. Usar el ID numérico revelaría la estructura interna de la base de datos y genera URLs menos descriptivas. En la Semana 8 verás cómo el backend genera este slug automáticamente al crear un artículo.
+
+---
+
+## 1. Configuración de React Router v6
+
+Hasta ahora tu app renderiza todo en la misma “página” — no hay URLs reales, no hay forma de llegar directamente a un artículo con un link, no hay botón de atrás que funcione correctamente. Las apps web reales tienen múltiples páginas accesibles por URL. Con un SPA (Single Page Application), el navegador no recarga para cambiar de página — React Router intercepta los cambios de URL y renderiza el componente correcto sin tocar el servidor.
+
+React Router v6 introduce `createBrowserRouter`, que define la estructura de rutas como datos en lugar de JSX anidado. Esto permite tipado más estricto y mejor integración con las devtools:
+
+```tsx
+// La configuración basada en objetos es más limpia con TypeScript
+const router = createBrowserRouter([
+  {
+    path: "/",
+    element: <Layout />,           // componente compartido entre hijos
+    children: [
+      { index: true, element: <Home /> },
+      { path: "productos", element: <Productos /> },
+      { path: "productos/:id", element: <DetalleProducto /> },
+      { path: "*", element: <NotFound /> },
+    ],
+  },
+]);
+
+function App() {
+  return <RouterProvider router={router} />;
+}
+```
+
+`<Outlet />` dentro de `Layout` es donde React Router renderiza el componente hijo que corresponde a la URL actual. Piénsalo como un “slot” que cambia de contenido según la ruta, mientras el `Layout` (navbar, footer) permanece fijo.
+
+## 2. useParams tipado
+
+Cuando la URL tiene un segmento variable como `/articulo/angewomon-de-digimon`, React Router captura ese segmento y lo expone como un parámetro. `useParams` lo lee desde el componente.
+
+Hay una particularidad importante: los parámetros de URL **siempre son strings**, incluso si el parámetro conceptualmente es un número. TypeScript lo modela como `string | undefined` — nunca como `number`. Siempre valida antes de usar:
+
+```tsx
+// ✅ Patrón correcto: validar y transformar el param
+function DetalleProducto() {
+  const { id } = useParams<{ id: string }>();
+
+  useEffect(() => {
+    if (!id) return;                    // param podría ser undefined
+    const idNumerico = parseInt(id, 10);
+    if (isNaN(idNumerico)) return;      // podría no ser un número válido
+    fetchProducto(idNumerico);
+  }, [id]);
+
+  return <div>Producto {id}</div>;
+}
+```
+
+Para el CMS, el detalle de artículo usa el `slug` — una cadena como `angewomon-de-digimon` — que es más seguro que un `id` numérico porque no revela información sobre la base de datos.
+
+## 3. useNavigate tipado
+
+`useNavigate` es el hook para navegar programáticamente — cuando necesitas redirigir al usuario después de una acción, no en respuesta a un click en un `<Link>`. Los casos más comunes: después de un login exitoso, después de guardar un formulario, o al detectar que una página no existe.
+
+```tsx
+// Patrón común: redirigir después de login guardando la URL de origen
+interface LocationState {
+  from: Location;
+}
+
+function Login() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  // location.state puede ser null si el usuario llegó directamente
+  const state = location.state as LocationState | null;
+
+  const handleLogin = async () => {
+    await authService.login(/* ... */);
+    // Volver a la página que el usuario intentaba acceder, o al admin
+    navigate(state?.from?.pathname ?? "/admin");
+  };
+
+  return <button onClick={handleLogin}>Iniciar sesión</button>;
+}
+```
+
+El cast `location.state as LocationState | null` es necesario porque `useLocation` tipifica `state` como `unknown` — React Router no sabe qué datos pusiste en el state cuando navegaste.
+
+## 4. Rutas protegidas con TypeScript
+
+Las rutas del panel admin no deben ser accesibles si el usuario no está autenticado. El patrón estándar es un componente `ProtectedRoute` que verifica el estado de autenticación y redirige a login si no hay sesión:
+
+```tsx
+// ProtectedRoute — puede verificar también el rol del usuario
+interface ProtectedRouteProps {
+  children: React.ReactNode;
+  requiredRole?: "admin" | "user";
+}
+
+function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) {
+  const { usuario } = useAuth();
+  const location = useLocation();
+
+  if (!usuario) {
+    // Guarda la URL actual para redirigir de vuelta tras el login
+    return <Navigate to="/admin/login" state={{ from: location }} replace />;
+  }
+
+  if (requiredRole && usuario.rol !== requiredRole) {
+    return <Navigate to="/403" replace />;
+  }
+
+  return <>{children}</>;
+}
+```
+
+Usar `ProtectedRoute` con `Outlet` como elemento de la ruta padre es el patrón más limpio — todas las rutas hijas están automáticamente protegidas sin repetir el wrapper en cada una:
+
+```tsx
+<Route path="/admin" element={<ProtectedRoute />}>
+  <Route index element={<ArticulosAdmin />} />
+  <Route path="nuevo" element={<NuevoArticulo />} />
+  <Route path="editar/:id" element={<EditarArticulo />} />
+</Route>
+```
+
+## 5. Code Splitting con React.lazy
+
+Cuando la app crece, el bundle JavaScript también crece. Sin code splitting, el navegador descarga todo el código — incluyendo el panel admin — aunque el visitante solo haya llegado a la página pública. `React.lazy` divide el bundle: cada página se convierte en un chunk separado que solo se descarga cuando el usuario navega a ella.
+
+```tsx
+// Importación dinámica — Vite crea un chunk separado por cada lazy import
+const AdminPanel = React.lazy(() => import("./pages/AdminPanel"));
+const Reportes   = React.lazy(() => import("./pages/Reportes"));
+
+// Suspense es obligatorio — muestra el fallback mientras se descarga el chunk
+function App() {
+  return (
+    <Suspense fallback={<div>Cargando módulo...</div>}>
+      <Routes>
+        <Route path="/admin" element={
+          <ProtectedRoute requiredRole="admin">
+            <AdminPanel />
+          </ProtectedRoute>
+        } />
+        <Route path="/reportes" element={<Reportes />} />
+      </Routes>
+    </Suspense>
+  );
+}
+```
+
+Verifica que funciona en el Network tab del navegador: al navegar por primera vez a `/admin` debería aparecer una petición a un archivo `AdminPanel-[hash].js` que antes no se había descargado.
+
+---
+
+## Actividades prácticas
+
+**Actividad 1 — Router básico (45 min)**
+Configurar un router con las páginas `Home`, `Productos`, `DetalleProducto` y `NotFound`. Usar `createBrowserRouter` con layout compartido.
+
+**Actividad 2 — Parámetros de ruta (45 min)**
+En `DetalleProducto`, obtener el `id` de la URL con `useParams`, cargar el producto con `useFetch` y mostrar 404 si no existe.
+
+**Actividad 3 — Rutas protegidas (60 min)**
+Implementar `ProtectedRoute`. Crear un contexto `AuthContext` simulado. Probar que `/dashboard` redirige a `/login` cuando no hay sesión.
+
+**Actividad 4 — Lazy loading (30 min)**
+Convertir las páginas de admin a imports lazy. Verificar en Network tab que se cargan bajo demanda.
+
+---
+
+## 🛠 Proyecto CMS — Semana 6: Navegación completa con React Router
+
+Hasta ahora las páginas existían pero no había forma de navegar entre ellas con URLs reales. Esta semana conectas todo con React Router v6: rutas públicas, parámetros dinámicos y rutas del panel admin protegidas por autenticación.
+
+### Paso 0 — Instalar TanStack Query y conectar al servidor Express
+
+Antes de configurar las rutas, prepara la capa que comunica el frontend con el servidor Express que levantaste en S5.
+
+```bash
+npm install @tanstack/react-query
+```
+
+Envuelve la app con `QueryClientProvider` en `main.tsx`:
+
+```tsx
+// src/main.tsx
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { App } from "./App";
+
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { staleTime: 1000 * 60 * 5 } }, // 5 min en caché
+});
+
+ReactDOM.createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
+    <QueryClientProvider client={queryClient}>
+      <App />
+    </QueryClientProvider>
+  </React.StrictMode>
+);
+```
+
+Crea el servicio que encapsula todas las llamadas HTTP:
+
+```typescript
+// src/services/articulosService.ts
+import type { Articulo, ApiResponse } from "@/types";
+
+const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
+
+async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(`${API_URL}${url}`, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${url}`);
+  return res.json() as Promise<T>;
+}
+
+export const articulosService = {
+  getAll: (params?: { estado?: string; busqueda?: string }) => {
+    const qs = params
+      ? new URLSearchParams(params as Record<string, string>).toString()
+      : "";
+    return fetchJSON<ApiResponse<Articulo[]>>(`/api/articulos${qs ? `?${qs}` : ""}`);
+  },
+  getBySlug: (slug: string) =>
+    fetchJSON<ApiResponse<Articulo>>(`/api/articulos/${slug}`),
+};
+```
+
+Esto significa que el frontend ya **no importa `mockData` para las páginas públicas** — todo pasa por la API. El servidor Express de S5 debe estar corriendo.
+
+### Paso 1 — Instalar y configurar React Router
+
+```bash
+npm install react-router-dom
+```
+
+```tsx
+// src/App.tsx
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { lazy, Suspense } from "react";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
+
+// Lazy loading para reducir el bundle inicial
+const HomePage = lazy(() => import("@/pages/HomePage").then(m => ({ default: m.HomePage })));
+const DetallePage = lazy(() => import("@/pages/DetallePage").then(m => ({ default: m.DetallePage })));
+const AdminLogin = lazy(() => import("@/pages/admin/AdminLogin").then(m => ({ default: m.AdminLogin })));
+const ArticulosAdmin = lazy(() => import("@/pages/admin/ArticulosAdmin").then(m => ({ default: m.ArticulosAdmin })));
+const NuevoArticulo = lazy(() => import("@/pages/admin/NuevoArticulo").then(m => ({ default: m.NuevoArticulo })));
+const EditarArticulo = lazy(() => import("@/pages/admin/EditarArticulo").then(m => ({ default: m.EditarArticulo })));
+const NotFound = lazy(() => import("@/pages/NotFound").then(m => ({ default: m.NotFound })));
+
+export function App() {
+  return (
+    <BrowserRouter>
+      <Suspense fallback={<div className="loading">Cargando...</div>}>
+        <Routes>
+          {/* Rutas públicas */}
+          <Route path="/" element={<HomePage />} />
+          <Route path="/articulo/:slug" element={<DetallePage />} />
+
+          {/* Login (no requiere auth) */}
+          <Route path="/admin/login" element={<AdminLogin />} />
+
+          {/* Rutas protegidas del panel admin */}
+          <Route path="/admin" element={<ProtectedRoute />}>
+            <Route index element={<ArticulosAdmin />} />
+            <Route path="nuevo" element={<NuevoArticulo />} />
+            <Route path="editar/:slug" element={<EditarArticulo />} />
+          </Route>
+
+          {/* 404 */}
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </Suspense>
+    </BrowserRouter>
+  );
+}
+```
+
+### Paso 2 — Ruta protegida
+
+```tsx
+// src/components/ProtectedRoute.tsx
+import { Navigate, Outlet } from "react-router-dom";
+import { useAuth } from "@/context/AuthContext";
+
+export function ProtectedRoute() {
+  const { isAuthenticated } = useAuth();
+
+  if (!isAuthenticated) {
+    // Redirige al login y guarda la URL a la que quería ir
+    return <Navigate to="/admin/login" replace />;
+  }
+
+  // Outlet renderiza la ruta hija que corresponde
+  return <Outlet />;
+}
+```
+
+### Paso 3 — Página de detalle con `useParams` y `useQuery`
+
+Actualiza `DetallePage` para cargar el artículo desde la API en lugar del array mock:
+
+```tsx
+// src/pages/DetallePage.tsx — conectada a la API
+import { useParams, Navigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { articulosService } from "@/services/articulosService";
+import { BarraProgreso } from "@/components/BarraProgreso";
+import { useProgresoLectura } from "@/hooks/useProgresoLectura";
+
+export function DetallePage() {
+  const { slug } = useParams<{ slug: string }>();
+  const progreso = useProgresoLectura();
+
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["articulo", slug],
+    queryFn: () => articulosService.getBySlug(slug!),
+    enabled: !!slug,
+  });
+
+  if (isLoading) return <div className="loading">Cargando artículo...</div>;
+  if (isError || !data?.data) return <Navigate to="/404" replace />;
+
+  const articulo = data.data;
+
+  return (
+    <>
+      <BarraProgreso valor={progreso} />
+      <article>
+        <div className="article-hero" style={{ backgroundImage: `url(${articulo.imagen})` }}>
+          <h1>{articulo.titulo}</h1>
+        </div>
+        <div dangerouslySetInnerHTML={{ __html: articulo.contenido }} />
+      </article>
+    </>
+  );
+}
+```
+
+### Paso 4 — Formulario de login
+
+```tsx
+// src/pages/admin/AdminLogin.tsx
+import { useState, FormEvent } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/context/AuthContext";
+
+export function AdminLogin() {
+  const { login } = useAuth();
+  const navigate = useNavigate();
+  const [error, setError] = useState("");
+  const [cargando, setCargando] = useState(false);
+
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setCargando(true);
+    setError("");
+
+    const form = new FormData(e.currentTarget);
+    const ok = await login(
+      form.get("email") as string,
+      form.get("password") as string
+    );
+
+    if (ok) {
+      navigate("/admin");
+    } else {
+      setError("Credenciales incorrectas");
+      setCargando(false);
+    }
+  }
+
+  return (
+    <main className="login-page">
+      <div className="login-card">
+        <h1>Panel de Administración</h1>
+        <form onSubmit={handleSubmit}>
+          <input name="email" type="email" placeholder="Email" required />
+          <input name="password" type="password" placeholder="Contraseña" required />
+          {error && <p className="error">{error}</p>}
+          <button type="submit" disabled={cargando}>
+            {cargando ? "Iniciando..." : "Iniciar sesión"}
+          </button>
+        </form>
+      </div>
+    </main>
+  );
+}
+```
+
+> **Para la próxima semana**: El frontend ya conecta al servidor Express — los datos viajan por HTTP. En la Semana 7 el único cambio será en el backend: el array en memoria se reemplaza por consultas reales a PostgreSQL, y la URL del `GET /api/articulos` seguirá siendo la misma.
+
+---
+
+## 📋 Entregable de la semana
+
+Para considerar completada la Semana 6, la navegación del CMS debe funcionar con URLs reales:
+
+- [ ] **Ruta `/`**: La página pública del blog carga correctamente con la lista de artículos.
+- [ ] **Ruta `/articulo/:slug`**: El detalle de artículo carga correctamente leyendo el `slug` de la URL. Si el slug no existe, muestra la página 404.
+- [ ] **Ruta `/admin/login`**: Muestra el formulario de login. Login con `admin@blog.com` / `admin123` redirige a `/admin`.
+- [ ] **Rutas `/admin/*` protegidas**: Intentar acceder a `/admin` sin sesión redirige automáticamente a `/admin/login`.
+- [ ] **Code splitting verificado**: En el Network tab del navegador, las páginas admin cargan como chunks separados distintos al bundle principal.
+- [ ] **Rutas con `:slug`**: La ruta `/admin/editar/:slug` usa el slug como parámetro (no `:id`). `useParams<{ slug: string }>()` devuelve un string como `mi-articulo`, nunca un número.

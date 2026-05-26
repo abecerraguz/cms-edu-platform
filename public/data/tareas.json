@@ -1,0 +1,12 @@
+[
+  { "id": 1, "titulo": "Diseñar wireframe de la app",       "descripcion": "Crear bocetos de las vistas principales en papel o Figma.",        "completada": true,  "fechaCreacion": "2024-01-10T09:00:00.000Z" },
+  { "id": 2, "titulo": "Configurar entorno Node.js",        "descripcion": "Inicializar proyecto con npm, instalar Express y dotenv.",            "completada": true,  "fechaCreacion": "2024-01-11T10:30:00.000Z" },
+  { "id": 3, "titulo": "Crear estructura MVC",              "descripcion": "Crear carpetas routes, controllers y models según el patrón MVC.",    "completada": false, "fechaCreacion": "2024-01-12T08:00:00.000Z" },
+  { "id": 4, "titulo": "Implementar middleware de logging", "descripcion": "Registrar método, ruta y tiempo de respuesta en cada petición.",      "completada": false, "fechaCreacion": "2024-01-13T11:00:00.000Z" },
+  { "id": 5, "titulo": "Endpoint GET /tareas",              "descripcion": "Devolver todas las tareas desde el archivo JSON de persistencia.",     "completada": false, "fechaCreacion": "2024-01-14T09:15:00.000Z" },
+  { "id": 6, "titulo": "Endpoint POST /tareas",             "descripcion": "Crear una tarea nueva y guardarla en el archivo JSON.",                "completada": false, "fechaCreacion": "2024-01-14T09:20:00.000Z" },
+  { "id": 7, "titulo": "Endpoint PUT /tareas/:id",          "descripcion": "Actualizar una tarea existente por su id.",                           "completada": false, "fechaCreacion": "2024-01-14T09:25:00.000Z" },
+  { "id": 8, "titulo": "Endpoint DELETE /tareas/:id",       "descripcion": "Eliminar una tarea por su id y persistir el cambio.",                  "completada": false, "fechaCreacion": "2024-01-14T09:30:00.000Z" },
+  { "id": 9, "titulo": "Autenticación con express-session", "descripcion": "Proteger rutas con middleware requireAuth y SESSION_SECRET en .env.",  "completada": false, "fechaCreacion": "2024-01-15T10:00:00.000Z" },
+  { "id": 10,"titulo": "Configurar PM2 en producción",      "descripcion": "Crear ecosystem.config.js en modo cluster y documentar comandos.",    "completada": false, "fechaCreacion": "2024-01-16T08:00:00.000Z" }
+]

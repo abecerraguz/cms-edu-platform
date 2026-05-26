@@ -1,0 +1,788 @@
+---
+titulo: "Hooks con TypeScript"
+descripcion: "useState, useEffect, useRef, useMemo y useCallback completamente tipados con TypeScript."
+duracion: "8h"
+semana: 3
+objetivos:
+  - "Usar useState con tipado explícito e inferido correctamente"
+  - "Tipar los efectos secundarios con useEffect y sus dependencias"
+  - "Referenciar elementos del DOM con useRef tipado"
+  - "Optimizar rendimiento con useMemo y useCallback tipados"
+  - "Crear hooks personalizados (custom hooks) con TypeScript"
+recursos:
+  - nombre: "React Hooks API Reference"
+    url: "https://react.dev/reference/react"
+  - nombre: "useHooks - colección de custom hooks"
+    url: "https://usehooks.com/"
+---
+
+> **🎯 Objetivo de la semana:** Al terminar sabrás usar `useState`, `useEffect`, `useRef`, `useMemo` y `useCallback` completamente tipados, y crear custom hooks que encapsulan lógica reutilizable con sus propios tipos de retorno.
+>
+> **🔑 Concepto clave:** Hooks como primitivas de composición — cada hook hace una sola cosa bien. Componerlos en un custom hook reutilizable es la diferencia entre lógica duplicada en cada componente y lógica compartida con un import.
+>
+> **🛠 Tarea práctica:** Crear los hooks del CMS: `usePublicaciones` (listado + búsqueda), `useProgresoLectura` (porcentaje de scroll de la página) y `useAdminPublicaciones` (CRUD local con filtros).
+>
+> **📋 Entregable:** Los 3 hooks tipados pasan la verificación TypeScript. `useProgresoLectura` actualiza la barra de progreso al hacer scroll. `useAdminPublicaciones` filtra la tabla en tiempo real al escribir en el input de búsqueda.
+
+---
+
+## 1. useState con TypeScript
+
+Hasta ahora los componentes que creaste en la semana 2 eran estáticos: recibían datos como props y los mostraban. El estado es lo que hace que un componente recuerde información entre renders — cada vez que el estado cambia, React vuelve a renderizar el componente con el nuevo valor.
+
+`useState` en TypeScript funciona con **inferencia de tipos** en la mayoría de los casos: si le pasas un valor inicial, TypeScript deduce el tipo automáticamente.
+
+```tsx
+// TypeScript infiere string porque el valor inicial es ""
+const [nombre, setNombre] = useState("");
+
+// TypeScript infiere number porque el valor inicial es 0
+const [contador, setContador] = useState(0);
+
+// TypeScript infiere boolean[]
+const [seleccionados, setSeleccionados] = useState([false, false, false]);
+```
+
+El problema aparece cuando el valor inicial no refleja el tipo real que tendrá el estado. El caso más común es el estado que empieza en `null` pero después se convierte en un objeto:
+
+```tsx
+// ❌ TypeScript infiere null — setUsuario solo aceptará null en el futuro
+const [usuario, setUsuario] = useState(null);
+
+// ✅ Union type explícito — acepta null al inicio y Usuario después
+const [usuario, setUsuario] = useState<Usuario | null>(null);
+
+// ✅ Arrays vacíos también necesitan anotación explícita
+const [articulos, setArticulos] = useState<Articulo[]>([]);
+```
+
+Para el estado con objetos complejos, define la interfaz primero y luego úsala en `useState`. Si el formulario tiene muchos campos, agrupa todo en un único objeto de estado:
+
+```tsx
+interface FormularioContacto {
+  nombre: string;
+  email: string;
+  mensaje: string;
+}
+
+// Un solo useState para todo el formulario
+const [form, setForm] = useState<FormularioContacto>({
+  nombre: "",
+  email: "",
+  mensaje: "",
+});
+
+// Actualizar un campo sin perder los demás
+const handleChange = (campo: keyof FormularioContacto, valor: string) => {
+  setForm((prev) => ({ ...prev, [campo]: valor }));
+};
+```
+
+La **actualización funcional** `setEstado(prev => ...)` es importante cuando el nuevo estado depende del valor anterior. Sin ella, en actualizaciones muy rápidas o asíncronas, podrías leer un estado desactualizado:
+
+```tsx
+// ❌ Puede leer estado viejo en actualizaciones rápidas
+setContador(contador + 1);
+
+// ✅ Siempre lee el valor más reciente
+setContador((prev) => prev + 1);
+```
+
+---
+
+## 2. useEffect tipado
+
+### El ciclo de vida de un componente
+
+Para entender `useEffect` primero tienes que entender qué le pasa a un componente desde que aparece en pantalla hasta que desaparece.
+
+Un componente React pasa por tres momentos:
+
+1. **Montaje** — el componente aparece en el DOM por primera vez. React ejecuta la función del componente, construye el JSX y lo inserta en la página.
+2. **Actualización** — alguna prop o estado cambia. React vuelve a ejecutar la función y actualiza solo lo que cambió.
+3. **Desmontaje** — el componente desaparece del DOM. React lo elimina de la página (por ejemplo, navegas a otra ruta o una condición lo oculta).
+
+```
+Montaje → Actualización → Actualización → ... → Desmontaje
+```
+
+El problema es que a veces necesitas hacer cosas que no son simplemente "calcular qué mostrar" — necesitas llamar a una API, suscribirte a un evento, o configurar un timer. Esas operaciones tienen que sincronizarse con ese ciclo. Para eso existe `useEffect`.
+
+### ¿Cuándo usar useEffect?
+
+La pregunta que tienes que hacerte es: **¿esto es algo que ocurre fuera del render?**
+
+- Cargar datos de una API cuando el componente aparece → `useEffect`
+- Escuchar el scroll de la ventana → `useEffect`
+- Suscribirte a un WebSocket → `useEffect`
+- Cambiar el `document.title` con el nombre del artículo → `useEffect`
+- Calcular el total de un carrito → **NO** (eso es `useMemo`, ocurre dentro del render)
+- Formatear una fecha → **NO** (ocurre durante el render, sin efectos externos)
+
+### El array de dependencias: los tres comportamientos
+
+El segundo argumento de `useEffect` controla exactamente cuándo se ejecuta el efecto. Aquí está la confusión más frecuente — hay tres comportamientos distintos:
+
+```tsx
+// CASO 1 — Sin array: se ejecuta después de CADA render
+useEffect(() => {
+  console.log("Me ejecuto siempre: en montaje Y en cada actualización");
+});
+
+// CASO 2 — Array vacío []: se ejecuta SOLO en el montaje
+useEffect(() => {
+  console.log("Me ejecuto UNA sola vez, cuando el componente aparece");
+}, []);
+
+// CASO 3 — Array con valores: se ejecuta en montaje Y cuando esos valores cambian
+useEffect(() => {
+  console.log("Me ejecuto cuando 'id' cambia (y también en el montaje)");
+}, [id]);
+```
+
+**El array vacío `[]` no significa "no depende de nada para funcionar" — significa "solo quiero que esto ocurra una vez, cuando el componente se monta".** Es el patrón correcto para cargar datos iniciales, configurar suscripciones o inicializar librerías externas:
+
+```tsx
+// ✅ Cargar datos UNA vez al montar — el array vacío es intencional
+useEffect(() => {
+  fetchArticulosDestacados().then(setArticulos);
+}, []); // ← correcto: no depende de ninguna variable del componente
+```
+
+**El error más frecuente** es usar `[]` cuando el efecto sí depende de una variable del componente. Si `id` cambia y el efecto no lo sabe, seguirá usando el `id` del primer render:
+
+```tsx
+// ❌ Bug silencioso: si id cambia, el efecto NO se re-ejecuta
+// El componente mostrará siempre los datos del id inicial
+useEffect(() => {
+  fetchUsuario(id);
+}, []); // ← id no está en deps
+
+// ✅ Correcto: se re-ejecuta cada vez que id cambia
+useEffect(() => {
+  fetchUsuario(id);
+}, [id]);
+```
+
+ESLint con `eslint-plugin-react-hooks` detecta automáticamente este error y lo marca como advertencia. Instálalo y no lo ignores.
+
+### ¿Por qué el efecto no puede ser async?
+
+`useEffect` espera que su función retorne `void` o una **función de cleanup**. Una función `async` siempre retorna una `Promise` — y React no sabe qué hacer con una Promise como retorno de un efecto:
+
+```tsx
+// ❌ React recibe una Promise como retorno — genera advertencia en consola
+useEffect(async () => {
+  const data = await fetchDatos();
+  setDatos(data);
+}, []);
+
+// ✅ Declara la función async DENTRO y llámala inmediatamente
+useEffect(() => {
+  async function cargar() {
+    const data = await fetchDatos();
+    setDatos(data);
+  }
+  cargar(); // ← la llamada retorna void, no una Promise
+}, []);
+```
+
+### La función de cleanup: qué pasa al desmontar
+
+Cuando el componente se desmonta (o antes de que el efecto se vuelva a ejecutar por un cambio de deps), React llama a la función que retorna el efecto. Es el momento para limpiar lo que configuraste: cancelar fetch, desuscribirse de eventos, limpiar timers.
+
+Sin cleanup, puedes tener **memory leaks**: el efecto intenta actualizar el estado de un componente que ya no existe en el DOM.
+
+```tsx
+useEffect(() => {
+  // SETUP: esto corre al montar (o cuando slug cambia)
+  const controller = new AbortController();
+
+  async function fetchArticulo() {
+    try {
+      const res = await fetch(`/api/articulos/${slug}`, {
+        signal: controller.signal,
+      });
+      const data: Articulo = await res.json();
+      setArticulo(data);
+    } catch (err) {
+      // AbortError no es un fallo real — ocurre cuando el cleanup cancela el fetch
+      if (err instanceof Error && err.name !== "AbortError") {
+        setError(err.message);
+      }
+    }
+  }
+
+  fetchArticulo();
+
+  // CLEANUP: esto corre al desmontar O antes de re-ejecutar por cambio de slug
+  return () => controller.abort();
+}, [slug]);
+```
+
+El flujo completo para entenderlo visualmente:
+
+```
+Componente monta
+  → SETUP: inicia fetch con slug="intro-react"
+
+Usuario navega a otro artículo (slug cambia a "hooks-avanzados")
+  → CLEANUP: cancela el fetch anterior (AbortController)
+  → SETUP: inicia nuevo fetch con slug="hooks-avanzados"
+
+Componente desmonta (usuario sale de la página)
+  → CLEANUP: cancela cualquier fetch pendiente
+```
+
+---
+
+## 3. useRef tipado
+
+`useRef` tiene dos casos de uso completamente distintos que conviene entender por separado, porque el tipado difiere en cada uno.
+
+**Caso 1 — Referencia a un elemento del DOM.** Cuando necesitas acceder directamente a un nodo HTML (para darle foco, medir su tamaño, reproducir un vídeo...), usas `useRef<HTMLTipoDeElemento>(null)`. El valor inicial siempre es `null` porque el elemento no existe hasta que el componente se monta:
+
+```tsx
+// El genérico le dice a TypeScript exactamente qué elemento esperas
+const inputRef = useRef<HTMLInputElement>(null);
+const videoRef = useRef<HTMLVideoElement>(null);
+const divRef = useRef<HTMLDivElement>(null);
+
+function enfocarBuscador() {
+  // .current puede ser null si el componente no está montado
+  // El optional chaining ?.  evita errores en ese caso
+  inputRef.current?.focus();
+  inputRef.current?.select(); // selecciona todo el texto
+}
+
+return <input ref={inputRef} type="search" />;
+```
+
+**Caso 2 — Variable mutable que no dispara re-renders.** A diferencia de `useState`, cambiar `.current` en un ref no re-renderiza el componente. Esto es ideal para timers, intervalos, el valor anterior de un estado, o cualquier valor que necesites recordar sin afectar la UI:
+
+```tsx
+// Guardar el ID de un intervalo para poder limpiarlo después
+const intervaloRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+// Nota: ReturnType<typeof setInterval> es más correcto que number
+// porque en Node.js devuelve un objeto NodeJS.Timer, no un número
+
+function iniciar() {
+  intervaloRef.current = setInterval(() => {
+    setSegundos((s) => s + 1);
+  }, 1000);
+}
+
+function detener() {
+  if (intervaloRef.current !== null) {
+    clearInterval(intervaloRef.current);
+    intervaloRef.current = null;
+  }
+}
+```
+
+Un caso práctico: guardar el valor **anterior** de un estado para comparar:
+
+```tsx
+function usePrevio<T>(valor: T): T | undefined {
+  const ref = useRef<T>();
+  useEffect(() => {
+    ref.current = valor; // se actualiza después de cada render
+  });
+  return ref.current; // devuelve el valor del render anterior
+}
+```
+
+---
+
+## 4. useMemo y useCallback tipados
+
+`useMemo` y `useCallback` son herramientas de **optimización de rendimiento**. Antes de usarlos, entiende qué problema resuelven — aplicarlos sin entender el contexto añade complejidad sin beneficio real.
+
+El problema: **React re-renderiza un componente cada vez que su estado o props cambian**. Normalmente eso es barato y correcto. Pero si dentro del render hay un cálculo costoso (filtrar miles de elementos, ordenar una lista grande), ese cálculo se repite en cada re-render aunque los datos no hayan cambiado.
+
+`useMemo` **memoiza el resultado de un cálculo**: solo lo recalcula cuando alguna de sus dependencias cambia:
+
+```tsx
+// Sin useMemo — este filtro se ejecuta en CADA render del componente
+const articulosPublicados = articulos.filter((a) => a.estado === "publicado");
+
+// Con useMemo — solo se recalcula si articulos cambia
+const articulosPublicados = useMemo(
+  () => articulos.filter((a) => a.estado === "publicado"),
+  [articulos] // ← dependencias: solo recalcula si articulos cambia
+);
+```
+
+TypeScript infiere el tipo de retorno automáticamente desde la función que le pasas — no necesitas anotar el genérico a menos que haya ambigüedad.
+
+`useCallback` **memoiza una función**: devuelve siempre la misma referencia mientras las dependencias no cambien. Esto importa cuando pasas la función como prop a un componente hijo envuelto en `React.memo`, porque las funciones nuevas en cada render rompen la memoización del hijo:
+
+```tsx
+// Sin useCallback — nueva función en cada render → hijo se re-renderiza siempre
+const handleAgregar = (producto: Producto) => {
+  setCarrito((prev) => [...prev, producto]);
+};
+
+// Con useCallback — referencia estable → hijo solo re-renderiza si deps cambian
+const handleAgregar = useCallback(
+  (producto: Producto) => {
+    setCarrito((prev) => [...prev, producto]);
+  },
+  [] // sin deps: la referencia nunca cambia
+);
+```
+
+**Cuándo NO usarlos:** Si el componente es simple y el cálculo es barato, `useMemo`/`useCallback` añaden overhead de memorización que puede ser peor que el recálculo. Úsalos cuando notes un problema real de rendimiento, no preventivamente.
+
+---
+
+## 5. Custom Hooks con TypeScript
+
+Un **custom hook** es una función que empieza por `use` y puede llamar a otros hooks. Es el mecanismo de React para reutilizar lógica con estado entre componentes — el equivalente a las clases utilitarias en OOP, pero para lógica reactiva.
+
+La regla de diseño: si tienes lógica de estado en un componente que podría usarse en otro lugar, sácala a un custom hook. El componente queda limpio y la lógica queda encapsulada y testeable de forma independiente.
+
+El tipado del retorno es lo más importante. Si el hook devuelve un objeto, define una interface para él:
+
+```tsx
+// Interfaz del retorno — el consumidor del hook sabe exactamente qué recibe
+interface UseFetchResult<T> {
+  data: T | null;
+  loading: boolean;
+  error: string | null;
+  refetch: () => void;
+}
+
+function useFetch<T>(url: string): UseFetchResult<T> {
+  const [data, setData] = useState<T | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Error ${res.status}`);
+      const json = await res.json() as T;
+      setData(json);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error desconocido");
+    } finally {
+      setLoading(false);
+    }
+  }, [url]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  return { data, loading, error, refetch: fetchData };
+}
+```
+
+Si el hook devuelve una **tupla** (como `useState`), usa `as const` para que TypeScript infiera los tipos exactos de cada posición en lugar de un array genérico:
+
+```tsx
+function useToggle(inicial = false) {
+  const [activo, setActivo] = useState(inicial);
+  const toggle = useCallback(() => setActivo((v) => !v), []);
+
+  // Sin "as const": TypeScript infiere (boolean | (() => void))[]
+  // Con "as const": TypeScript infiere [boolean, () => void] — tupla exacta
+  return [activo, toggle] as const;
+}
+
+// El consumidor obtiene tipos correctos en cada posición
+const [menuAbierto, toggleMenu] = useToggle();
+```
+
+---
+
+## Actividades prácticas
+
+**Actividad 1 — useState con formulario complejo (45 min)**
+
+Crea un componente `FormularioRegistro` con campos `nombre`, `email`, `password` y `confirmPassword`. El estado completo es un único objeto tipado con una interface. Valida en el `handleSubmit`: email con formato válido (usa una regex), password mínimo 8 caracteres, confirmPassword igual a password. Almacena los errores en `Record<keyof FormFields, string>` y muéstralos debajo de cada input. Demuestra que `setForm(prev => ({ ...prev, [campo]: valor }))` con `keyof` es más mantenible que tener cuatro `useState` separados.
+
+**Actividad 2 — useEffect con fetch y estados de carga (60 min)**
+
+Construye un componente `ListaUsuarios` que cargue datos de `https://jsonplaceholder.typicode.com/users`. Maneja tres estados: `loading` (muestra un skeleton o spinner), `error` (muestra el mensaje con un botón "Reintentar") y `data` (renderiza la lista). Implementa el `AbortController` para limpiar el fetch al desmontar. Agrega un select que cambie el endpoint entre `/users` y `/posts` — verifica que el AbortController cancela la petición anterior al cambiar.
+
+**Actividad 3 — useRef para cronómetro (45 min)**
+
+Crea un componente `Cronometro` con tres botones: Iniciar, Pausar y Reiniciar. El tiempo en segundos va en `useState`. El `setInterval` activo va en `useRef<ReturnType<typeof setInterval> | null>`. Asegúrate de que el cleanup en `useEffect` limpia el intervalo al desmontar el componente. Agrega también un `useRef<HTMLButtonElement>` para que el botón "Iniciar" reciba foco automáticamente al montar.
+
+**Actividad 4 — Custom hook genérico `useFetch<T>` (60 min)**
+
+Extrae la lógica de fetch de la Actividad 2 en un hook genérico `useFetch<T>(url: string)` con retorno tipado `{ data, loading, error, refetch }`. Úsalo en tres componentes distintos: `ListaUsuarios` (tipado con `interface Usuario`), `ListaPosts` (tipado con `interface Post`) y `PerfilUsuario` (tipado con `interface Usuario`, usando un id dinámico en la URL). Verifica que TypeScript infiere el tipo de `data` correctamente en cada componente sin que necesites anotar nada extra en el consumidor.
+
+---
+
+## 🛠 Proyecto CMS — Semana 3: Carga asíncrona, progreso de lectura y búsqueda en el admin
+
+Esta semana los hooks dejan de ser ejercicios académicos y se convierten en código real del CMS. Hay tres piezas:
+
+1. **Página pública (`HomePage`)**: simular la carga asíncrona de artículos (en semana 7 reemplazarás la simulación por una llamada real a Express).
+2. **Detalle de artículo (`DetallePage`)**: implementar la barra de progreso de lectura que ya existe en `detalle.html` como `.reading-progress`.
+3. **Panel admin (`AdminListado`)**: añadir el buscador `#tableSearch` de `admin_listado.html` con filtrado en tiempo real.
+
+> **Importante**: La página pública (`index.html`) **no tiene buscador** — es solo un grid de tarjetas. El único buscador de la plantilla vive en el panel admin. No añadas búsqueda a `HomePage`.
+
+---
+
+### Paso 1 — `useEffect` para carga asíncrona en `HomePage`
+
+La `HomePage` de la semana anterior importaba los mocks directamente. Ahora simula una carga asíncrona: hay un estado `cargando` y, después de un delay, llegan los artículos. Este patrón es idéntico al que usarás en semana 7 con `fetch()`.
+
+```tsx
+// src/hooks/usePublicaciones.ts
+import { useState, useEffect } from "react";
+import type { Articulo } from "@/types";
+import { ARTICULOS_MOCK } from "@/data/mockData";
+
+interface EstadoCarga {
+  articulos: Articulo[];
+  cargando: boolean;
+  error: string | null;
+}
+
+export function usePublicaciones(): EstadoCarga {
+  const [articulos, setArticulos] = useState<Articulo[]>([]);
+  const [cargando, setCargando] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Simulamos latencia de red — en Semana 7 esto será fetch('/api/articulos')
+    const timer = setTimeout(() => {
+      try {
+        setArticulos(ARTICULOS_MOCK);
+      } catch (e) {
+        setError("No se pudieron cargar las publicaciones.");
+      } finally {
+        setCargando(false);
+      }
+    }, 600);
+
+    // Cleanup: si el componente desmonta antes de que termine el timer, lo cancelamos
+    return () => clearTimeout(timer);
+  }, []); // [] = ejecuta solo al montar, nunca más
+
+  return { articulos, cargando, error };
+}
+```
+
+Actualiza `src/pages/HomePage.tsx`:
+
+```tsx
+// src/pages/HomePage.tsx
+import { usePublicaciones } from "@/hooks/usePublicaciones";
+import { ArticuloCard } from "@/components/ArticuloCard";
+
+export function HomePage() {
+  const { articulos, cargando, error } = usePublicaciones();
+
+  if (cargando) {
+    return (
+      <main>
+        <section className="hero">
+          <div className="container">
+            <div className="hero__content">
+              <h1 className="hero__title">Bienvenido al Blog</h1>
+            </div>
+          </div>
+        </section>
+        <div className="container">
+          <p className="text-center py-5">Cargando publicaciones...</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (error) {
+    return <main><p className="text-danger">{error}</p></main>;
+  }
+
+  return (
+    <main>
+      <section className="hero">
+        <div className="container">
+          <div className="hero__content">
+            <h1 className="hero__title">Bienvenido al Blog</h1>
+            <p className="hero__subtitle">Últimas noticias de tecnología, gaming y cultura pop</p>
+          </div>
+        </div>
+      </section>
+
+      <section className="posts-section">
+        <div className="container">
+          <div className="row g-4">
+            {articulos.map((a) => (
+              <div key={a.id} className="col-md-6 col-lg-6">
+                <ArticuloCard articulo={a} />
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+    </main>
+  );
+}
+```
+
+---
+
+### Paso 2 — Barra de progreso de lectura en `DetallePage`
+
+La plantilla `detalle.html` tiene este elemento justo al inicio del `<body>`:
+
+```html
+<div class="reading-progress" id="readingProgress"
+     role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"
+     aria-label="Progreso de lectura"></div>
+```
+
+El CSS en `main.css` ya lo posiciona como barra fija. Solo falta el JS que actualiza su ancho al hacer scroll. Eso es exactamente lo que hace `useEffect` con un event listener — y la función de limpieza que devuelve es el `removeEventListener`.
+
+Crea `src/hooks/useProgresoLectura.ts`:
+
+```ts
+// src/hooks/useProgresoLectura.ts
+import { useState, useEffect } from "react";
+
+export function useProgresoLectura(): number {
+  const [progreso, setProgreso] = useState(0);
+
+  useEffect(() => {
+    function calcularProgreso() {
+      const scrollTop = window.scrollY;
+      const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+      const porcentaje = docHeight > 0 ? Math.round((scrollTop / docHeight) * 100) : 0;
+      setProgreso(porcentaje);
+    }
+
+    window.addEventListener("scroll", calcularProgreso, { passive: true });
+
+    // CLEANUP — se ejecuta cuando el componente desmonta
+    // Si no lo hicieras, el listener quedaría registrado para siempre
+    return () => window.removeEventListener("scroll", calcularProgreso);
+  }, []); // [] = registra una vez al montar, limpia al desmontar
+
+  return progreso;
+}
+```
+
+Usa el hook en `src/pages/DetallePage.tsx`:
+
+```tsx
+// src/pages/DetallePage.tsx
+import { useProgresoLectura } from "@/hooks/useProgresoLectura";
+import type { Articulo } from "@/types";
+
+interface DetallePageProps {
+  articulo: Articulo;
+}
+
+export function DetallePage({ articulo }: DetallePageProps) {
+  const progreso = useProgresoLectura();
+
+  return (
+    <>
+      {/* Barra fija en el top — replica .reading-progress de detalle.html */}
+      <div
+        className="reading-progress"
+        role="progressbar"
+        aria-valuenow={progreso}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label="Progreso de lectura"
+        style={{ width: `${progreso}%` }}
+      />
+
+      <div className="article-hero">
+        <img
+          src={articulo.imagen}
+          alt={articulo.titulo}
+          className="article-hero__img"
+        />
+        <div className="article-hero__overlay" />
+        <div className="article-hero__content">
+          <div className="container">
+            <span className="article-hero__category">{articulo.categoria.nombre}</span>
+            <h1 className="article-hero__title">{articulo.titulo}</h1>
+            <div className="article-hero__meta">
+              <span><i className="bi bi-calendar3" /> {articulo.fecha}</span>
+              <span><i className="bi bi-person" /> {articulo.autor}</span>
+              <span><i className="bi bi-clock" /> {articulo.tiempoLectura} min de lectura</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <main className="article-page">
+        <div className="container">
+          <div
+            className="article-content"
+            dangerouslySetInnerHTML={{ __html: articulo.contenido }}
+          />
+        </div>
+      </main>
+    </>
+  );
+}
+```
+
+---
+
+### Paso 3 — Búsqueda admin: hook `useAdminPublicaciones`
+
+En `admin_listado.html` el buscador `#tableSearch` filtra la tabla en tiempo real. En React, ese patrón es `useState` (para el término) + `useMemo` (para la lista filtrada), todo encapsulado en un custom hook.
+
+```ts
+// src/hooks/useAdminPublicaciones.ts
+import { useState, useMemo, useCallback } from "react";
+import type { Articulo } from "@/types";
+import { ARTICULOS_MOCK } from "@/data/mockData";
+
+interface UseAdminPublicaciones {
+  articulos: Articulo[];
+  busqueda: string;
+  totalFiltrados: number;
+  buscar: (termino: string) => void;
+}
+
+export function useAdminPublicaciones(): UseAdminPublicaciones {
+  const [busqueda, setBusqueda] = useState("");
+
+  // useMemo recalcula solo cuando cambia busqueda o los datos base
+  const articulos = useMemo(() => {
+    const termino = busqueda.toLowerCase().trim();
+    if (!termino) return ARTICULOS_MOCK;
+    return ARTICULOS_MOCK.filter(
+      (a) =>
+        a.titulo.toLowerCase().includes(termino) ||
+        a.categoria.nombre.toLowerCase().includes(termino)
+    );
+  }, [busqueda]);
+
+  // useCallback estabiliza la referencia para evitar renders innecesarios
+  const buscar = useCallback((termino: string) => {
+    setBusqueda(termino);
+  }, []);
+
+  return { articulos, busqueda, totalFiltrados: articulos.length, buscar };
+}
+```
+
+Úsalo en `src/pages/admin/AdminListado.tsx`:
+
+```tsx
+// src/pages/admin/AdminListado.tsx
+import { useAdminPublicaciones } from "@/hooks/useAdminPublicaciones";
+import type { Articulo } from "@/types";
+
+export function AdminListado() {
+  const { articulos, busqueda, totalFiltrados, buscar } = useAdminPublicaciones();
+
+  return (
+    <main className="admin-page">
+      <div className="container">
+
+        <div className="admin-header">
+          <div className="admin-header__info">
+            <h1><i className="bi bi-grid-1x2" /> Publicaciones</h1>
+            <p>Desde aquí gestiona el contenido de tu blog.</p>
+          </div>
+          <a href="/admin/nueva" className="btn btn--success">
+            <i className="bi bi-plus-circle" /> Nueva publicación
+          </a>
+        </div>
+
+        {/* Stats — valores derivados del array en memoria */}
+        <div className="admin-stats">
+          <div className="admin-stat">
+            <div className="admin-stat__icon admin-stat__icon--blue">
+              <i className="bi bi-file-earmark-text" />
+            </div>
+            <div className="admin-stat__info">
+              <span className="admin-stat__value">{totalFiltrados}</span>
+              <span className="admin-stat__label">
+                {busqueda ? "Resultados" : "Total artículos"}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="admin-table">
+          <div className="admin-table__header">
+            <div className="admin-table__title-wrap">
+              <h2 className="admin-table__title">
+                <i className="bi bi-list-ul" /> Lista de Publicaciones
+              </h2>
+              <span className="admin-table__count">{totalFiltrados} artículos</span>
+            </div>
+
+            {/* Replica #tableSearch de admin_listado.html */}
+            <div className="admin-table__search">
+              <i className="bi bi-search" />
+              <input
+                type="search"
+                id="tableSearch"
+                value={busqueda}
+                onChange={(e) => buscar(e.target.value)}
+                placeholder="Buscar publicación..."
+                aria-label="Buscar publicación"
+              />
+            </div>
+          </div>
+
+          <div className="admin-table__wrap">
+            <table id="postsTable">
+              <thead>
+                <tr>
+                  <th style={{ width: 56 }}><i className="bi bi-image" /></th>
+                  <th><i className="bi bi-card-text" /> Título</th>
+                  <th style={{ width: 120 }}><i className="bi bi-tag" /> Categoría</th>
+                  <th style={{ width: 110 }}><i className="bi bi-calendar3" /> Fecha</th>
+                  <th style={{ width: 160 }}><i className="bi bi-gear" /> Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {articulos.map((a: Articulo) => (
+                  <tr key={a.id}>
+                    <td>
+                      <img src={a.imagen} alt="" className="td-thumb" />
+                    </td>
+                    <td><span className="td-title">{a.titulo}</span></td>
+                    <td>
+                      <span className={`td-badge td-badge--${a.categoria.slug}`}>
+                        {a.categoria.nombre}
+                      </span>
+                    </td>
+                    <td className="td-date">{a.fecha}</td>
+                    <td className="td-actions">
+                      <a href={`/${a.slug}`} className="btn-action btn-action--view" title="Ver">
+                        <i className="bi bi-eye" />
+                      </a>
+                      <a href={`/admin/editar/${a.id}`} className="btn-action btn-action--edit" title="Editar">
+                        <i className="bi bi-pencil" />
+                      </a>
+                      <button className="btn-action btn-action--delete" title="Eliminar">
+                        <i className="bi bi-trash" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </main>
+  );
+}
+```
+
+> **En la Semana 7** el `useEffect` de `usePublicaciones` se reemplazará por `fetch('/api/articulos')` real hacia tu Express + PostgreSQL. El `useAdminPublicaciones` también pasará a llamar la API. La arquitectura que estás construyendo ahora anticipa exactamente ese momento.

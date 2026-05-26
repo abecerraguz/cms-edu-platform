@@ -1,0 +1,443 @@
+---
+titulo: "Fundamentos de TypeScript"
+descripcion: "Tipos básicos, interfaces, genéricos y configuración del entorno de desarrollo con TypeScript."
+duracion: "8h"
+semana: 1
+objetivos:
+  - "Configurar un entorno de desarrollo con TypeScript desde cero"
+  - "Utilizar los tipos primitivos y tipos avanzados de TypeScript correctamente"
+  - "Definir interfaces y tipos personalizados para modelar datos"
+  - "Aplicar genéricos para escribir código reutilizable y type-safe"
+  - "Comprender la diferencia entre type e interface y cuándo usar cada uno"
+recursos:
+  - nombre: "Documentación oficial de TypeScript"
+    url: "https://www.typescriptlang.org/docs/"
+  - nombre: "TypeScript Playground"
+    url: "https://www.typescriptlang.org/play"
+---
+
+> **🎯 Objetivo de la semana:** Al terminar sabrás configurar un proyecto TypeScript con `strict: true`, usar tipos primitivos y avanzados, modelar datos con `interface` y `type`, y aplicar genéricos para escribir funciones reutilizables y type-safe.
+>
+> **🔑 Concepto clave:** El sistema de tipos como red de seguridad — TypeScript no cambia cómo funciona JavaScript en runtime, pero detecta en el editor los errores que en JavaScript puro solo aparecen en producción.
+>
+> **🛠 Tarea práctica:** Modelar las tres entidades principales del CMS — `Articulo`, `Categoria` y `Usuario` — usando solo TypeScript: interfaces, tipos union y genéricos. Sin React todavía.
+>
+> **📋 Entregable:** El archivo `tipos.ts` compila con `tsc --noEmit` sin errores con `strict: true` activo. Las tres interfaces tienen todos sus campos con tipos correctos y relaciones entre entidades.
+
+---
+
+## 1. Introducción y configuración del entorno
+
+Si vienes de JavaScript, probablemente hayas experimentado errores que solo aparecen en producción: una propiedad que esperabas que existiera no existe, una función recibe un número en lugar de un string, un array termina siendo `undefined`. TypeScript resuelve esto añadiendo un sistema de tipos estático sobre JavaScript — el compilador verifica tus suposiciones antes de que el código se ejecute.
+
+Antes de escribir una sola línea, necesitas el entorno configurado correctamente. Instala Node.js y luego TypeScript de forma global:
+
+```bash
+npm install -g typescript
+tsc --version  # verifica que quedó instalado
+```
+
+Crea una carpeta para el proyecto y dentro inicializa el archivo de configuración:
+
+```bash
+mkdir semana-01 && cd semana-01
+tsc --init
+```
+
+El archivo `tsconfig.json` generado tiene decenas de opciones. Por ahora, las tres que importan son:
+
+- **`strict: true`** — activa todas las verificaciones estrictas. Siempre hazlo desde el inicio; activarlo después en un proyecto existente es doloroso.
+- **`target: "ES2020"`** — a qué versión de JavaScript se compila tu código.
+- **`outDir: "./dist"`** — carpeta donde quedan los archivos `.js` compilados.
+
+Para no compilar manualmente cada vez que cambias un archivo, usa el modo watch:
+
+```bash
+tsc --watch
+```
+
+Instala la extensión **TypeScript + JavaScript** en VS Code si aún no la tienes. Con ella obtienes autocompletado, errores en línea y sugerencias de tipos sin necesidad de compilar.
+
+---
+
+## 2. Tipos básicos y anotaciones
+
+En JavaScript cualquier variable puede cambiar de tipo en cualquier momento — eso que parece libertad, en proyectos grandes se convierte en una fuente constante de bugs. En TypeScript, tú declaras explícitamente qué tipo de dato espera cada variable o función, y el compilador te avisa si algo no cuadra.
+
+La sintaxis es sencilla: escribes el nombre de la variable, luego `: tipo`, y luego el valor.
+
+```typescript
+// Tipos primitivos — los más comunes
+const nombre: string = "Ana";
+const edad: number = 28;
+const activo: boolean = true;
+
+// Arrays — hay dos sintaxis equivalentes, usa la que prefieras
+const habilidades: string[] = ["React", "TypeScript"];
+const puntuaciones: Array<number> = [8, 9, 7];
+
+// Tupla — array con longitud y tipos fijos en cada posición
+// Útil para representar pares clave-valor o coordenadas
+const coordenada: [number, number] = [40.4168, -3.7038];
+const entrada: [string, number] = ["React", 2013];
+```
+
+**¿Cuándo usar `any` y `unknown`?** Esta es una pregunta frecuente. `any` desactiva toda verificación de tipos — es útil al migrar código JavaScript antiguo, pero úsalo lo menos posible. `unknown` es la alternativa segura: también acepta cualquier valor, pero te obliga a verificar el tipo antes de usarlo.
+
+```typescript
+// any: peligroso, el compilador confía ciegamente
+let dato: any = "hola";
+dato.toUpperCase(); // ok en compilación, pero si dato fuera un número, falla en runtime
+
+// unknown: seguro, te fuerza a verificar antes
+let respuesta: unknown = obtenerDato();
+if (typeof respuesta === "string") {
+  console.log(respuesta.toUpperCase()); // ahora sí es seguro
+}
+```
+
+Los **enums** son útiles cuando tienes un conjunto fijo de valores posibles. Prefiere siempre los enums de `string` — son más legibles en logs y en la red:
+
+```typescript
+// Enum de string — el valor que viaja en JSON es legible
+enum Rol { Admin = "ADMIN", Editor = "EDITOR", Lector = "LECTOR" }
+
+function tieneAcceso(rol: Rol): boolean {
+  return rol === Rol.Admin || rol === Rol.Editor;
+}
+
+tieneAcceso(Rol.Admin);   // true
+tieneAcceso("ADMIN");     // ❌ Error: no acepta strings sueltos
+```
+
+---
+
+## 3. Interfaces y tipos personalizados
+
+Con los tipos primitivos puedes anotar variables simples, pero en aplicaciones reales trabajas con objetos complejos: un usuario, un producto, una respuesta de API. Para eso existen las **interfaces**.
+
+Una interfaz es un contrato: dice exactamente qué propiedades debe tener un objeto y de qué tipo es cada una. Si un objeto no cumple el contrato, TypeScript lo marca como error antes de que el código se ejecute.
+
+```typescript
+// Define el contrato de lo que es un "Usuario" en tu sistema
+interface Usuario {
+  id: number;
+  nombre: string;
+  email: string;
+  avatar?: string;       // el signo ? indica que es opcional
+  readonly createdAt: Date; // readonly evita que se pueda reasignar
+}
+
+// TypeScript verifica que el objeto cumple la interfaz
+const user: Usuario = {
+  id: 1,
+  nombre: "Ana García",
+  email: "ana@ejemplo.com",
+  createdAt: new Date(),
+  // avatar no es obligatorio, puede omitirse
+};
+
+user.createdAt = new Date(); // ❌ Error: no se puede reasignar una propiedad readonly
+```
+
+**`interface` vs `type` — ¿cuál usar?** La regla práctica: usa `interface` para describir la forma de objetos y clases, y `type` para alias de uniones, intersecciones o tipos más complejos.
+
+```typescript
+// type: ideal para uniones (un valor que puede ser una cosa u otra)
+type EstadoPedido = "pendiente" | "enviado" | "entregado" | "cancelado";
+
+// type: intersección — combina dos tipos en uno
+type AdminUsuario = Usuario & { permisos: string[]; nivelAcceso: number };
+
+// Tipado de funciones con interface
+interface Calculadora {
+  sumar(a: number, b: number): number;
+  restar(a: number, b: number): number;
+}
+```
+
+Los **union types** son una de las características más poderosas de TypeScript. En lugar de usar `any`, defines exactamente los valores posibles:
+
+```typescript
+// Sin union type: cualquier string pasa
+function mostrarAlerta(tipo: string) { ... }
+mostrarAlerta("oops"); // ningún error, aunque "oops" no tiene sentido
+
+// Con union type: solo los valores válidos
+function mostrarAlerta(tipo: "info" | "advertencia" | "error") { ... }
+mostrarAlerta("oops"); // ❌ Error inmediato del compilador
+```
+
+---
+
+## 4. Genéricos (Generics)
+
+Imagina que escribes una función que devuelve el primer elemento de un array. Si la tipas con `number[]`, solo funciona con arrays de números. Si la tipas con `any[]`, pierdes toda la información de tipo en el resultado. Los **genéricos** resuelven esto: escribes la función una sola vez y funciona correctamente con cualquier tipo.
+
+```typescript
+// Sin genérico — obliga a duplicar código o usar any
+function primerNumero(arr: number[]): number { return arr[0]; }
+function primerString(arr: string[]): string { return arr[0]; }
+
+// Con genérico — una sola función, TypeScript infiere el tipo
+function primero<T>(arr: T[]): T | undefined {
+  return arr[0];
+}
+
+const num = primero([1, 2, 3]);      // TypeScript sabe que num es number | undefined
+const str = primero(["a", "b"]);     // TypeScript sabe que str es string | undefined
+```
+
+El parámetro `<T>` es una variable de tipo: TypeScript la reemplaza con el tipo real cuando la función es llamada. Puedes usar cualquier nombre, pero `T` (de "Type") es la convención.
+
+Las interfaces genéricas son especialmente útiles para modelar respuestas de API, donde el tipo de datos cambia pero la estructura del envoltorio es siempre la misma:
+
+```typescript
+// Estructura que devuelve tu backend para cualquier recurso
+interface ApiResponse<T> {
+  data: T;
+  status: number;
+  message: string;
+  timestamp: string;
+}
+
+// El mismo wrapper sirve para usuarios, productos, pedidos...
+type RespuestaUsuarios = ApiResponse<Usuario[]>;
+type RespuestaProducto = ApiResponse<{ id: number; nombre: string }>;
+```
+
+**Utility Types** — TypeScript incluye tipos genéricos de utilidad que transforman tipos existentes. Son muy comunes en proyectos React:
+
+```typescript
+interface Producto {
+  id: number;
+  nombre: string;
+  precio: number;
+  stock: number;
+}
+
+// Partial<T> — todas las props se vuelven opcionales
+// Útil para formularios de edición donde no todos los campos cambian
+type ActualizarProducto = Partial<Producto>;
+
+// Pick<T, K> — solo las props que necesitas
+// Útil para mostrar un listado sin exponer todos los datos
+type ProductoListado = Pick<Producto, "id" | "nombre" | "precio">;
+
+// Omit<T, K> — todo excepto las props que excluyes
+// Útil al crear un nuevo producto (el id lo genera el servidor)
+type NuevoProducto = Omit<Producto, "id">;
+
+// Readonly<T> — todas las props son inmutables
+// Útil para datos que no deben modificarse después de cargarlos
+type ProductoFijo = Readonly<Producto>;
+```
+
+---
+
+## Actividades prácticas
+
+**Actividad 1 — Configuración del entorno (30 min)**
+
+Instala Node.js, TypeScript y VS Code. Crea un proyecto desde cero: inicializa `tsconfig.json` con `strict: true`, escribe un archivo `index.ts` que use al menos tres tipos diferentes y verifca que `tsc --watch` detecta errores en tiempo real. Intenta asignar un `number` a una variable `string` y observa el mensaje de error.
+
+**Actividad 2 — Tipos y anotaciones (45 min)**
+
+Escribe una función `calcularPromedio(notas: number[]): number` que lance un error descriptivo si el array está vacío. Luego escribe `formatearNombre(nombre: string, apellido: string, mayusculas?: boolean): string`. Agrega un enum `NivelEstudiante` con valores `Basico`, `Intermedio` y `Avanzado` y úsalo en una función que retorne un mensaje diferente según el nivel.
+
+**Actividad 3 — Modelado con interfaces (60 min)**
+
+Modela un sistema de gestión académica: crea las interfaces `Estudiante`, `Curso` y `Calificacion`. `Estudiante` debe tener `id`, `nombre`, `email`, `nivel` (usando el enum de la actividad anterior) y una lista de cursos. `Calificacion` debe tener `nota`, `fecha` y `aprobado` (derivado automáticamente si nota >= 4.0). Crea un array con al menos tres estudiantes y filtra los que aprobaron todos sus cursos.
+
+**Actividad 4 — Genéricos aplicados (60 min)**
+
+Crea una función genérica `filtrar<T>(items: T[], predicado: (item: T) => boolean): T[]`. Crea una interfaz genérica `Repositorio<T>` con métodos `findById(id: number): T | undefined`, `findAll(): T[]` y `save(item: T): void`. Implementa `Repositorio<Estudiante>` usando un array en memoria. Aplica `Partial`, `Pick` y `Omit` para crear tipos derivados útiles para un formulario de creación y otro de edición de estudiantes.
+
+---
+
+## 🛠 Proyecto CMS — Semana 1: Modelar el dominio de datos
+
+Esta semana arranca el proyecto que irás construyendo durante todo el programa: un **CMS de blog** con React + TypeScript en el frontend y Express + PostgreSQL en el backend. Al finalizar la semana 9 tendrás una aplicación real funcionando — no un ejercicio aislado.
+
+Se te entrega una plantilla HTML/CSS/JS ya terminada con el diseño visual del CMS. Tu trabajo es convertirla progresivamente en una aplicación React tipada.
+
+> **⬇️ Descarga la plantilla antes de comenzar:**
+> [**plantilla-cms.zip**](/downloads/plantilla-cms.zip) — contiene el HTML/CSS/JS del blog público y el panel admin completo.
+
+La plantilla tiene tres partes principales:
+
+- **Blog público**: página de inicio con grilla de artículos + página de detalle con barra de progreso de lectura
+- **Panel admin**: login + listado + formulario de creación + formulario de edición de artículos
+- **API**: backend Express + PostgreSQL (se conecta en la semana 7)
+
+### Paso 1 — Inicializar el proyecto
+
+Crea el proyecto Vite con la plantilla de React + TypeScript:
+
+```bash
+npm create vite@latest cms-blog -- --template react-ts
+cd cms-blog
+npm install
+npm run dev
+```
+
+Ajusta `tsconfig.json` para activar el modo estricto y la resolución de módulos correcta:
+
+```json
+{
+  "compilerOptions": {
+    "strict": true,
+    "target": "ES2020",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "paths": { "@/*": ["./src/*"] }
+  }
+}
+```
+
+Organiza la estructura de carpetas que usarás durante todo el programa:
+
+```
+src/
+├── components/       ← componentes reutilizables
+│   ├── layout/       ← Header, Footer, Sidebar
+│   └── ui/           ← Button, Badge, Card
+├── pages/            ← vistas completas (Home, Detalle, Admin)
+├── types/            ← interfaces TypeScript del dominio
+├── services/         ← llamadas a la API (semana 7)
+├── hooks/            ← custom hooks (semana 3)
+└── context/          ← Context API (semana 4)
+```
+
+### Paso 2 — Modelar los tipos del CMS
+
+Mirando la plantilla HTML que se te entrega, identifica las entidades que maneja el sistema. Crea el archivo `src/types/index.ts` con todos los tipos del dominio:
+
+```typescript
+// src/types/index.ts
+
+// ── Categoria ──────────────────────────────────────────────
+export type CategoriaSlug =
+  | "tecnologia"
+  | "diseno"
+  | "programacion"
+  | "herramientas";
+
+export interface Categoria {
+  id: number;
+  nombre: string;
+  slug: CategoriaSlug;
+  color: string; // color hex para el badge en el listado
+}
+
+// ── Tag ────────────────────────────────────────────────────
+export interface Tag {
+  id: number;
+  nombre: string;
+  slug: string;
+}
+
+// ── Articulo ───────────────────────────────────────────────
+export type EstadoArticulo = "borrador" | "publicado" | "archivado";
+
+export interface Articulo {
+  id: number;
+  titulo: string;
+  slug: string;
+  extracto: string;        // texto corto para la tarjeta en el listado
+  contenido: string;       // HTML o Markdown del cuerpo completo
+  imagen: string;          // URL de la imagen de portada
+  categoria: Categoria;
+  tags: Tag[];
+  autor: string;
+  tiempoLectura: number;   // minutos estimados
+  estado: EstadoArticulo;
+  fechaPublicacion: string; // ISO 8601
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ── Formularios (Utility Types aplicados) ──────────────────
+// Al crear un artículo, el id/createdAt/updatedAt los genera el servidor
+export type NuevoArticulo = Omit<Articulo, "id" | "createdAt" | "updatedAt">;
+
+// Al editar, todos los campos son opcionales excepto el id
+export type ActualizarArticulo = Partial<NuevoArticulo> & { id: number };
+
+// Para el listado del admin solo necesitamos un subconjunto
+export type ArticuloListado = Pick<
+  Articulo,
+  "id" | "titulo" | "slug" | "categoria" | "estado" | "fechaPublicacion"
+>;
+
+// ── API ────────────────────────────────────────────────────
+// Wrapper genérico para todas las respuestas del backend
+export interface ApiResponse<T> {
+  data: T;
+  message: string;
+  status: number;
+}
+
+export interface PaginatedResponse<T> extends ApiResponse<T[]> {
+  pagination: {
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  };
+}
+
+// ── Usuario / Auth ─────────────────────────────────────────
+export type RolUsuario = "admin" | "editor";
+
+export interface Usuario {
+  id: number;
+  nombre: string;
+  email: string;
+  rol: RolUsuario;
+  avatar?: string;
+}
+
+export interface SesionAuth {
+  usuario: Usuario;
+  token: string;
+  expiresAt: string;
+}
+```
+
+### Paso 3 — Verificar los tipos con datos mock
+
+Crea `src/data/mockData.ts` para verificar que los tipos funcionan correctamente — este archivo también te servirá las próximas semanas antes de conectar la API real:
+
+```typescript
+// src/data/mockData.ts
+import type { Articulo, Categoria } from "@/types";
+
+export const CATEGORIAS: Categoria[] = [
+  { id: 1, nombre: "Tecnología", slug: "tecnologia", color: "#3b82f6" },
+  { id: 2, nombre: "Diseño", slug: "diseno", color: "#8b5cf6" },
+];
+
+export const ARTICULOS_MOCK: Articulo[] = [
+  {
+    id: 1,
+    titulo: "Angewomon de Digimon cobra vida gracias a la IA",
+    slug: "angewomon-digimon-ia",
+    extracto: "Modelos de inteligencia artificial generan imágenes hiperrealistas del personaje.",
+    contenido: "<p>Contenido completo del artículo...</p>",
+    imagen: "/uploads/articulo-1.jpg",
+    categoria: CATEGORIAS[0],
+    tags: [{ id: 1, nombre: "IA", slug: "ia" }],
+    autor: "Administrador",
+    tiempoLectura: 5,
+    estado: "publicado",
+    fechaPublicacion: "2026-01-05T10:00:00Z",
+    createdAt: "2026-01-05T10:00:00Z",
+    updatedAt: "2026-01-05T10:00:00Z",
+  },
+];
+```
+
+> **Para la próxima semana**: Con los tipos definidos, en la Semana 2 comenzarás a crear los componentes React que consuman estos datos — la tarjeta `ArticuloCard`, el `Header` y el `Footer`, replicando visualmente la plantilla HTML que tienes como referencia.

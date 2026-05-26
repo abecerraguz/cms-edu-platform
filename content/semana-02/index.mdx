@@ -1,0 +1,539 @@
+---
+titulo: "React + TypeScript: Primeros pasos"
+descripcion: "Configuración con Vite, componentes funcionales tipados, props con interfaces y JSX con TypeScript."
+duracion: "8h"
+semana: 2
+objetivos:
+  - "Crear un proyecto React con TypeScript usando Vite"
+  - "Comprender la estructura de un proyecto React + TS"
+  - "Crear componentes funcionales tipados con TypeScript"
+  - "Tipar props con interfaces y types correctamente"
+  - "Entender cómo funciona JSX con TypeScript (TSX)"
+recursos:
+  - nombre: "Vite - Getting Started"
+    url: "https://vitejs.dev/guide/"
+  - nombre: "React TypeScript Cheatsheet"
+    url: "https://react-typescript-cheatsheet.netlify.app/"
+---
+
+> **🎯 Objetivo de la semana:** Al terminar sabrás crear un proyecto React con Vite, escribir componentes funcionales tipados con TypeScript, pasar props con interfaces y entender la diferencia entre `.ts` y `.tsx`.
+>
+> **🔑 Concepto clave:** Props como contrato — la interfaz de props es la API pública de un componente. TypeScript la hace explícita: el editor autocompleta, el compilador avisa si falta un campo obligatorio y el código se documenta solo.
+>
+> **🛠 Tarea práctica:** Convertir la plantilla Bootstrap del CMS en los primeros componentes React: `ArticuloCard`, `CategoriaBadge` y el `Header` con el nombre del blog.
+>
+> **📋 Entregable:** `npm run build` compila sin errores. Los 3 componentes reciben props tipadas y renderizan el mismo HTML que la plantilla Bootstrap original.
+
+---
+
+## 1. Configuración del proyecto con Vite
+
+Si vienes de la semana anterior donde todo era TypeScript puro en el terminal, el salto a React puede parecer grande. En realidad, agregar React a TypeScript es agregar una capa de UI sobre lo que ya sabes — los tipos que definiste con `interface` y los genéricos que aprendiste siguen siendo exactamente los mismos.
+
+La primera decisión es la herramienta de build. **Create React App** fue el estándar durante años, pero hoy está descontinuado: es lento, no soporta ESModules de forma nativa y su configuración es difícil de modificar. **Vite** resuelve todo eso: el servidor de desarrollo arranca en menos de un segundo porque no bundlea en frío — sirve los módulos directamente al navegador con ESModules y solo compila lo que se pide.
+
+```bash
+npm create vite@latest cms-blog -- --template react-ts
+cd cms-blog
+npm install
+npm run dev
+```
+
+> **📁 Nota sobre el nombre de carpeta:** Por ahora el proyecto se llama `cms-blog/`. En la **Semana 5**, cuando añadas el servidor Express, reorganizarás el proyecto en un monorepo: crearás una carpeta raíz `react-cms/` y moverás `cms-blog/` dentro renombrándola a `frontend/`. No tienes que hacerlo ahora — solo es útil saberlo para no sorprenderte cuando llegue ese momento.
+
+Vite genera una estructura limpia. Los archivos que te interesan:
+
+```
+cms-blog/
+├── src/
+│   ├── App.tsx          ← componente raíz, tu punto de entrada
+│   ├── main.tsx         ← monta React en el DOM (ReactDOM.createRoot)
+│   └── vite-env.d.ts    ← tipos de las variables de entorno de Vite
+├── index.html           ← la única página HTML — React se inyecta aquí
+├── vite.config.ts       ← configuración de Vite
+└── tsconfig.json        ← configuración de TypeScript
+```
+
+Nota la extensión: los archivos que contienen JSX usan `.tsx`, los que solo tienen lógica TypeScript sin markup usan `.ts`. El compilador fuerza esta distinción — si intentas escribir JSX en un `.ts` obtienes un error inmediato.
+
+En `tsconfig.json`, la opción clave para React es `"jsx": "react-jsx"`. Con ella no necesitas importar React en cada archivo — el compilador lo inyecta automáticamente en la transformación.
+
+```json
+{
+  "compilerOptions": {
+    "strict": true,
+    "target": "ES2020",
+    "jsx": "react-jsx",
+    "moduleResolution": "bundler",
+    "paths": { "@/*": ["./src/*"] }
+  }
+}
+```
+
+Los tres scripts que usarás en el día a día: `npm run dev` (servidor con HMR), `npm run build` (bundle optimizado para producción) y `npm run preview` (sirve el build localmente para verificar antes de deploy).
+
+---
+
+## 2. Componentes funcionales con TypeScript
+
+Un componente React es, en esencia, una función que recibe datos y devuelve UI. TypeScript te pide que seas explícito sobre qué datos recibe y qué devuelve — y eso, en lugar de ser una restricción, es lo que hace que los componentes sean fáciles de usar correctamente.
+
+La firma más directa es una función que retorna `JSX.Element`:
+
+```tsx
+// La forma más clara y directa
+function Saludo(): JSX.Element {
+  return <h1>Hola, mundo</h1>;
+}
+```
+
+Cuando el componente recibe datos, defines una interfaz para las props:
+
+```tsx
+interface SaludoProps {
+  nombre: string;
+  apellido?: string; // opcional con ?
+}
+
+function Saludo({ nombre, apellido }: SaludoProps): JSX.Element {
+  return (
+    <h1>
+      Hola, {nombre} {apellido ?? ""}
+    </h1>
+  );
+}
+```
+
+**¿Por qué no `React.FC`?** Verás este patrón en código antiguo:
+
+```tsx
+// Patrón antiguo — evítalo
+const Saludo: React.FC<SaludoProps> = ({ nombre }) => <h1>Hola, {nombre}</h1>;
+```
+
+`React.FC` tiene un problema: en versiones anteriores a React 18 incluía `children` automáticamente en el tipo, aunque el componente no los usara. Hoy se prefiere la firma de función explícita porque es más predecible, más fácil de leer y no añade nada que no hayas declarado tú.
+
+Cuando un componente puede devolver `null` (para no renderizar nada), el tipo de retorno pasa a ser `JSX.Element | null`. Si devuelve texto, números o arrays de elementos, el tipo es `React.ReactNode` — el más amplio de todos:
+
+```tsx
+// ReactNode acepta: JSX, string, number, null, boolean, arrays
+function Contenido({ texto }: { texto?: string }): React.ReactNode {
+  if (!texto) return null;
+  return <p>{texto}</p>;
+}
+```
+
+Los fragmentos `<></>` son tu herramienta cuando necesitas agrupar elementos sin añadir un `<div>` extra al DOM — TypeScript los soporta sin configuración adicional.
+
+---
+
+## 3. Tipado de Props con interfaces
+
+Las props son el contrato de comunicación entre componentes. Tiparlas correctamente significa que quien usa el componente sabe exactamente qué debe pasarle — y TypeScript le avisa si se equivoca antes de que la app arranque.
+
+El patrón más común: declarar una `interface` con el nombre `NombreComponenteProps` justo encima del componente:
+
+```tsx
+interface BotonProps {
+  label: string;             // requerida — sin ? significa obligatoria
+  disabled?: boolean;        // opcional — puede omitirse
+  onClick: () => void;       // función sin argumentos ni retorno
+  variant?: "primary" | "secondary" | "danger"; // union type para valores fijos
+}
+
+function Boton({ label, disabled = false, onClick, variant = "primary" }: BotonProps) {
+  return (
+    <button disabled={disabled} onClick={onClick} className={`btn btn--${variant}`}>
+      {label}
+    </button>
+  );
+}
+```
+
+Los valores por defecto van en el destructuring, no en la interfaz. La interfaz describe el contrato externo (qué puede recibir el componente), el destructuring describe el comportamiento interno (qué pasa si no se pasa una prop opcional).
+
+**Props de tipo función** — uno de los casos más frecuentes. Tipar correctamente los callbacks evita errores sutiles:
+
+```tsx
+interface BuscadorProps {
+  // función que no retorna nada
+  onBuscar: (termino: string) => void;
+  // función que puede retornar un valor
+  onSeleccionar: (id: number) => boolean;
+  // función asíncrona
+  onCargar: () => Promise<void>;
+}
+```
+
+**Props `children`** — cuando un componente envuelve otros componentes, necesitas declarar `children` explícitamente. El tipo correcto es `React.ReactNode`:
+
+```tsx
+interface TarjetaProps {
+  titulo: string;
+  children: React.ReactNode; // acepta cualquier contenido válido de React
+}
+
+function Tarjeta({ titulo, children }: TarjetaProps) {
+  return (
+    <div className="card">
+      <h2 className="card__title">{titulo}</h2>
+      <div className="card__body">{children}</div>
+    </div>
+  );
+}
+
+// Uso — children es lo que va entre las etiquetas
+<Tarjeta titulo="Bienvenido">
+  <p>Contenido del interior</p>
+  <Boton label="Acción" onClick={() => {}} />
+</Tarjeta>
+```
+
+---
+
+## 4. Manejo de eventos en TypeScript
+
+En JavaScript vanilla, el objeto `event` de un `onclick` tiene tipo `Event`. En React, cada tipo de evento tiene su propio tipo genérico que incluye exactamente las propiedades que ese evento expone — `ChangeEvent<HTMLInputElement>` para cambios en inputs, `FormEvent<HTMLFormElement>` para envíos de formularios, `MouseEvent<HTMLButtonElement>` para clicks en botones.
+
+Esto no es burocracia — es la herramienta que te permite acceder a `event.target.value` con autocompletado y sin errores:
+
+```tsx
+function Formulario() {
+  // TypeScript sabe que e.target.value es string
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    console.log(e.target.value);
+  };
+
+  // e.preventDefault() está disponible porque FormEvent lo incluye
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    // lógica del formulario
+  };
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <input type="text" onChange={handleChange} />
+      <button type="submit">Enviar</button>
+    </form>
+  );
+}
+```
+
+**El error más común** es intentar tipar el evento como `any` para "que deje de quejarse":
+
+```tsx
+// ❌ Nunca hagas esto — pierdes todo el beneficio de TypeScript
+const handleChange = (e: any) => {
+  console.log(e.target.value); // funciona, pero sin tipos ni autocompletado
+};
+
+// ✅ El tipo correcto — breve y preciso
+const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  console.log(e.target.value); // TypeScript sabe que es string
+};
+```
+
+Para clicks en botones, el genérico apunta al elemento HTML del botón. Si el handler no usa el evento, puedes omitir el parámetro directamente:
+
+```tsx
+// Cuando no necesitas el objeto event
+<button onClick={() => handleEliminar(id)}>Eliminar</button>
+
+// Cuando sí lo necesitas (ej: para stopPropagation)
+<button onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
+  e.stopPropagation();
+  handleEliminar(id);
+}}>
+  Eliminar
+</button>
+```
+
+---
+
+## 5. Listas y renderizado condicional tipado
+
+Renderizar listas y condiciones son las operaciones que más se repiten en cualquier aplicación React. TypeScript añade una capa de seguridad aquí que evita errores muy comunes en JavaScript puro.
+
+Para listas, usas `.map()` igual que en JavaScript, pero TypeScript infiere el tipo de cada elemento automáticamente si el array está bien tipado:
+
+```tsx
+interface Articulo {
+  id: number;
+  titulo: string;
+  publicado: boolean;
+}
+
+function ListaArticulos({ articulos }: { articulos: Articulo[] }) {
+  // Si articulos está vacío, React renderiza null — mejor manejarlo explícitamente
+  if (articulos.length === 0) {
+    return <p className="empty-state">No hay artículos todavía.</p>;
+  }
+
+  return (
+    <ul className="articulos-lista">
+      {articulos.map((articulo) => (
+        // key debe ser un identificador único y estable — usa el id, nunca el índice del array
+        <li key={articulo.id}>
+          {articulo.titulo}
+        </li>
+      ))}
+    </ul>
+  );
+}
+```
+
+**`key` con el índice del array** es el error más frecuente en listas:
+
+```tsx
+// ❌ Nunca uses el índice como key en listas que cambian
+articulos.map((a, index) => <li key={index}>{a.titulo}</li>)
+
+// ✅ Usa siempre el id único del dato
+articulos.map((a) => <li key={a.id}>{a.titulo}</li>)
+```
+
+Cuando el orden de la lista cambia (por filtros, ordenamiento o eliminación), React usa `key` para saber qué elementos reacomodar. Si usas el índice, React puede reusar el DOM incorrecto y producir bugs visuales difíciles de reproducir.
+
+Para **renderizado condicional**, tienes dos patrones principales. El cortocircuito `&&` es perfecto cuando solo quieres mostrar algo o nada:
+
+```tsx
+// Muestra el badge solo si el artículo está publicado
+{articulo.publicado && <span className="badge">Publicado</span>}
+```
+
+El ternario es mejor cuando hay dos casos distintos:
+
+```tsx
+// Dos estados visuales diferenciados
+{cargando ? (
+  <Skeleton />
+) : (
+  <ListaArticulos articulos={articulos} />
+)}
+```
+
+Cuidado con un error silencioso de JavaScript en React: el `0` en una condición con `&&`:
+
+```tsx
+// ❌ Si articulos.length es 0, React renderiza el número 0 en pantalla
+{articulos.length && <Lista articulos={articulos} />}
+
+// ✅ Convierte siempre a booleano explícito
+{articulos.length > 0 && <Lista articulos={articulos} />}
+```
+
+---
+
+## Actividades prácticas
+
+**Actividad 1 — Scaffolding con Vite (30 min)**
+
+Crea el proyecto `react-ts` con Vite desde cero. Explora la estructura generada: identifica para qué sirve cada archivo (`main.tsx`, `App.tsx`, `vite-env.d.ts`, `index.html`). Modifica el componente `App` para que retorne un `<h1>` con tu nombre. Guarda el archivo y verifica que el navegador actualiza sin recargar — eso es HMR. Luego intenta escribir JSX en un archivo `.ts` y observa el error que genera el compilador.
+
+**Actividad 2 — Componentes tipados (60 min)**
+
+Crea tres componentes con sus interfaces: `Tarjeta` (recibe `titulo: string`, `descripcion: string`, `imagen?: string`), `Insignia` (recibe `texto: string`, `color: "verde" | "rojo" | "amarillo"`) y `Avatar` (recibe `nombre: string`, `url?: string` — si no hay url, muestra las iniciales del nombre). Cada componente en su propio archivo `.tsx`. Impa cada interfaz con `export` y reutilízala en `App.tsx` para renderizar los tres componentes con datos distintos.
+
+**Actividad 3 — Manejo de eventos (60 min)**
+
+Crea un componente `BuscadorSimple` que tenga un `<input type="text">` controlado y un `<button>`. La prop del componente es `onSearch: (termino: string) => void`. Al hacer clic en el botón o presionar Enter, llama a `onSearch` con el valor actual del input. Aplica tipos correctos a todos los manejadores de eventos. En `App.tsx`, pasa `onSearch={(t) => console.log("Buscando:", t)}` y verifica en la consola que el evento se dispara.
+
+**Actividad 4 — Lista con renderizado condicional (45 min)**
+
+Crea una interfaz `Tarea` con `id`, `texto` y `completada`. Crea un componente `ListaTareas` que reciba `tareas: Tarea[]`. Si el array está vacío, muestra el mensaje "No hay tareas pendientes". Si hay tareas, renderiza cada una en un `<li>` con un botón "Completar" que llama a `onCompletar: (id: number) => void`. Usa `key={tarea.id}` — no el índice. Demuestra en `App.tsx` que usar el índice como key produce el bug de reordenamiento.
+
+---
+
+## 🛠 Proyecto CMS — Semana 2: Convertir la plantilla a componentes React
+
+Esta semana transformas el HTML estático de la plantilla en componentes React tipados. Aún no hay datos reales — usarás los mocks que creaste en la semana 1. El objetivo es replicar visualmente la página de inicio (`index.html`) y el artículo de detalle (`detalle.html`) con React.
+
+### Paso 0 — Integrar los estilos de la plantilla
+
+Antes de crear cualquier componente, necesitas que tu app React use exactamente los mismos estilos de la plantilla. La plantilla usa **Bootstrap 5**, **Bootstrap Icons** y un CSS personalizado (`assets/css/main.css`).
+
+**1. Instala las dependencias:**
+
+```bash
+npm install bootstrap bootstrap-icons
+```
+
+**2. Copia los assets al proyecto:**
+
+```bash
+# Desde la raíz de tu proyecto React (cms-blog/)
+cp -r ../creando-CMS/assets/css/main.css src/styles/main.css
+cp -r ../creando-CMS/assets/img public/assets/img
+cp -r ../creando-CMS/admin/uploads public/uploads
+```
+
+La carpeta `public/` en Vite se sirve tal cual — las imágenes de `public/assets/img/blog.png` se acceden desde el navegador como `/assets/img/blog.png`, igual que en la plantilla HTML original.
+
+**3. Importa todo en `src/main.tsx`:**
+
+```tsx
+// src/main.tsx — los imports de CSS van ANTES que el componente App
+import 'bootstrap/dist/css/bootstrap.min.css';
+import 'bootstrap-icons/font/bootstrap-icons.css';
+import './styles/main.css';       // ← estilos custom de la plantilla
+
+import { StrictMode } from 'react';
+import { createRoot } from 'react-dom/client';
+import { App } from './App';
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <App />
+  </StrictMode>
+);
+```
+
+A partir de este punto, todas las clases CSS de la plantilla (`navbar`, `post-card`, `hero`, `btn--primary`, etc.) están disponibles en tus componentes React.
+
+---
+
+### Paso 1 — Componentes de layout
+
+Empezando por lo que se repite en todas las páginas. Crea `src/components/layout/Header.tsx`:
+
+```tsx
+// src/components/layout/Header.tsx
+interface HeaderProps {
+  titulo: string;
+  linkAdmin?: string;
+}
+
+export function Header({ titulo, linkAdmin = "/admin" }: HeaderProps) {
+  return (
+    <header className="navbar">
+      <a href="/" className="navbar-brand">{titulo}</a>
+      {linkAdmin && (
+        <nav>
+          <a href={linkAdmin}>Instructor</a>
+        </nav>
+      )}
+    </header>
+  );
+}
+```
+
+Y `src/components/layout/Footer.tsx` con el texto del programa y los enlaces a semanas.
+
+### Paso 2 — Componente ArticuloCard
+
+Este componente es el corazón del listado. Toma un `Articulo` completo y muestra la tarjeta que ves en la plantilla: imagen, badge de categoría, título, extracto, tiempo de lectura y botón:
+
+```tsx
+// src/components/ArticuloCard.tsx
+import type { Articulo } from "@/types";
+
+interface ArticuloCardProps {
+  articulo: Articulo;
+  onClick?: (slug: string) => void;
+}
+
+export function ArticuloCard({ articulo, onClick }: ArticuloCardProps) {
+  return (
+    <article className="post-card">
+      <div className="post-card__image">
+        <img src={articulo.imagen} alt={articulo.titulo} />
+        <span
+          className="category-badge"
+          style={{ backgroundColor: articulo.categoria.color }}
+        >
+          {articulo.categoria.nombre}
+        </span>
+      </div>
+
+      <div className="post-card__body">
+        <h2>
+          <a href={`/articulo/${articulo.slug}`}>{articulo.titulo}</a>
+        </h2>
+        <p className="post-card__excerpt">{articulo.extracto}</p>
+
+        <footer className="post-card__meta">
+          <span>⏱ {articulo.tiempoLectura} min</span>
+          <button onClick={() => onClick?.(articulo.slug)}>
+            Ver artículo →
+          </button>
+        </footer>
+      </div>
+    </article>
+  );
+}
+```
+
+### Paso 3 — Página de inicio
+
+Crea `src/pages/HomePage.tsx` que renderice el `Header`, la sección hero y el grid de artículos usando los datos mock:
+
+```tsx
+// src/pages/HomePage.tsx
+import { Header } from "@/components/layout/Header";
+import { ArticuloCard } from "@/components/ArticuloCard";
+import { ARTICULOS_MOCK } from "@/data/mockData";
+
+export function HomePage() {
+  return (
+    <div>
+      <Header titulo="Mi Blog" />
+
+      <section className="hero">
+        <h1>Últimas publicaciones</h1>
+        <p>Artículos sobre tecnología, diseño y programación</p>
+      </section>
+
+      <main className="posts-grid">
+        {ARTICULOS_MOCK.map((articulo) => (
+          <ArticuloCard key={articulo.id} articulo={articulo} />
+        ))}
+      </main>
+    </div>
+  );
+}
+```
+
+### Paso 4 — Página de detalle (detalle.html)
+
+Crea `src/pages/DetallePage.tsx`. Por ahora pasa el artículo como prop — en la Semana 6 lo cargarás desde la URL con React Router:
+
+```tsx
+// src/pages/DetallePage.tsx
+import type { Articulo } from "@/types";
+
+interface DetallePageProps {
+  articulo: Articulo;
+}
+
+export function DetallePage({ articulo }: DetallePageProps) {
+  return (
+    <article>
+      <div
+        className="article-hero"
+        style={{ backgroundImage: `url(${articulo.imagen})` }}
+      >
+        <span className="category-badge">{articulo.categoria.nombre}</span>
+        <h1>{articulo.titulo}</h1>
+        <div className="article-meta">
+          <span>📅 {articulo.fechaPublicacion}</span>
+          <span>👤 {articulo.autor}</span>
+          <span>⏱ {articulo.tiempoLectura} min de lectura</span>
+        </div>
+      </div>
+
+      <div
+        className="article-content"
+        dangerouslySetInnerHTML={{ __html: articulo.contenido }}
+      />
+
+      <div className="article-tags">
+        {articulo.tags.map((tag) => (
+          <span key={tag.id} className="tag">{tag.nombre}</span>
+        ))}
+      </div>
+    </article>
+  );
+}
+```
+
+> **Para la próxima semana**: Los datos están hardcodeados. En la Semana 3 añadirás `useState` y `useEffect` para manejar estados de carga, búsqueda y filtrado dinámico sobre el listado de artículos.
