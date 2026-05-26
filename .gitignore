@@ -43,6 +43,7 @@ creando-CMS/
 react-cms/
 .agents/
 .kiro/
+.vscode/
 
 AGENTS.md
 CLAUDE.md
