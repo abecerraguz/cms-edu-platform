@@ -455,3 +455,22 @@ Para considerar completada la Semana 6, la navegación del CMS debe funcionar co
 - [ ] **Rutas `/admin/*` protegidas**: Intentar acceder a `/admin` sin sesión redirige automáticamente a `/admin/login`.
 - [ ] **Code splitting verificado**: En el Network tab del navegador, las páginas admin cargan como chunks separados distintos al bundle principal.
 - [ ] **Rutas con `:slug`**: La ruta `/admin/editar/:slug` usa el slug como parámetro (no `:id`). `useParams<{ slug: string }>()` devuelve un string como `mi-articulo`, nunca un número.
+
+---
+
+## 📥 Descarga el entregable de esta semana
+
+¿No lograste completar la semana o quieres comparar tu código con la solución? Descarga el estado del proyecto al terminar la Semana 6:
+
+**[⬇️ Descargar entregable Semana 6 (.zip)](https://github.com/abecerraguz/blog-cms/archive/refs/tags/semana-05.zip)**
+
+**Qué incluye:** proyecto monorepo completo con frontend conectado al servidor Express: `articulosService.ts`, React Router v6 con todas las rutas (públicas, detalle, admin protegido), `ProtectedRoute`, páginas `HomePage`, `DetallePage`, `AdminLogin`, `AdminListado`.
+
+**Setup después de descomprimir:**
+```bash
+cd blog-cms
+npm install
+cd frontend && npm install && cd ..
+cd backend && pnpm install && cd ..
+npm run dev    # frontend (5173) + backend Express con mock (3001)
+```

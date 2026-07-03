@@ -540,3 +540,25 @@ curl -X POST http://localhost:3001/api/upload \
 - [ ] **`POST /api/upload`**: Recibe `multipart/form-data` con campo `imagen`, guarda el archivo con nombre único y devuelve `{ data: { filename } }`. Archivos no-imagen devuelven 400.
 - [ ] **Archivos estáticos**: Una imagen subida es accesible en `http://localhost:3001/uploads/nombre-del-archivo.jpg`.
 - [ ] **Error handler**: Los errores de PostgreSQL y de multer devuelven mensajes descriptivos con el código HTTP correcto (no 500 genérico).
+
+---
+
+## 📥 Descarga el entregable de esta semana
+
+¿No lograste completar la semana o quieres comparar tu código con la solución? Descarga el estado del proyecto al terminar la Semana 8:
+
+**[⬇️ Descargar entregable Semana 8 (.zip)](https://github.com/abecerraguz/blog-cms/archive/refs/tags/semana-08.zip)**
+
+**Qué incluye:** backend completo en arquitectura MVC de 4 capas — `v1/routes/`, `controllers/`, `services/`, `database/` con queries Prisma, `middlewares/` (upload, errorHandler, cacheHeaders) y `utils/` (ApiError, apiResponse). Todos los endpoints: GET, POST, PUT, DELETE y `/upload`.
+
+**Setup después de descomprimir:**
+```bash
+cd blog-cms
+npm install
+cd backend && pnpm install
+# Crea backend/.env con: PORT=3001 y DATABASE_URL="postgresql://..."
+npx prisma migrate dev
+pnpm seed
+cd ..
+npm run dev
+```

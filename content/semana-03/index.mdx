@@ -670,3 +670,22 @@ export function useArticulosFiltrados(
 > **En la Semana 5**, cuando crees el store Zustand, `useArticulosFiltrados` se simplificará: leerá `articulos`, `busqueda` y `filtroEstado` directamente del store. El cálculo con `useMemo` no cambia.
 >
 > **En la Semana 7**, el `useEffect` de `usePublicaciones` reemplazará el mock por `articulosService.getAll()` real hacia Express + PostgreSQL. La arquitectura que estás construyendo ahora anticipa exactamente ese momento.
+
+---
+
+## 📥 Descarga el entregable de esta semana
+
+¿No lograste completar la semana o quieres comparar tu código con la solución? Descarga el estado del proyecto al terminar la Semana 3:
+
+**[⬇️ Descargar entregable Semana 3 (.zip)](https://github.com/abecerraguz/blog-cms/archive/refs/tags/semana-06.zip)**
+
+**Qué incluye:** proyecto completo con los tres hooks del CMS en `src/hooks/`: `usePublicaciones`, `useFormularioArticulo` y `useArticulosFiltrados`, además de todos los componentes y tipos de semanas anteriores.
+
+> **Nota:** El entregable disponible incluye el avance acumulado hasta la Semana 6. Enfoca tu revisión en los archivos de `src/hooks/`.
+
+**Setup después de descomprimir:**
+```bash
+cd blog-cms
+npm install
+npm run dev
+```

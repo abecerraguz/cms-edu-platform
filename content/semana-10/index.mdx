@@ -452,3 +452,26 @@ Para considerar completada la Semana 8, tu suite de tests debe demostrar:
 - [ ] **Mínimo 10 tests pasando**: Cubriendo al menos `ArticuloCard` (render + interacción), `useFormularioArticulo` (setCampo, reset, esValido), `AdminLogin` (credenciales correctas e incorrectas) y `NuevoArticulo` (validación del formulario).
 - [ ] **Al menos 1 test con mock de servicio**: Un test que usa `vi.mock` para aislar el componente de la API real.
 - [ ] **Audit de tipos aprobado**: `npm run build` compila sin errores. No hay `any` en el código del proyecto. Al menos un uso de `unknown` con type narrowing en el manejo de errores.
+
+---
+
+## 📥 Descarga el entregable de esta semana
+
+¿No lograste completar la semana o quieres comparar tu código con la solución? Descarga el estado final del proyecto (Semana 10 — proyecto completo):
+
+**[⬇️ Descargar entregable Semana 10 — proyecto completo (.zip)](https://github.com/abecerraguz/blog-cms/archive/refs/tags/semana-10.zip)**
+
+**Qué incluye:** el proyecto CMS Blog completo — frontend React + TypeScript con Vitest configurado y 29 tests pasando, backend Express + Prisma 7 con arquitectura MVC completa, monorepo con `npm run dev` funcional.
+
+**Setup después de descomprimir:**
+```bash
+cd blog-cms
+npm install
+cd frontend && npm install && cd ..
+cd backend && pnpm install
+# Crea backend/.env con: PORT=3001 y DATABASE_URL="postgresql://..."
+npx prisma migrate dev && pnpm seed
+cd ..
+npm run dev              # frontend (5173) + backend (3001)
+cd frontend && npm run test:run   # ejecutar los 29 tests
+```

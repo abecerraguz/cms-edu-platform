@@ -473,3 +473,25 @@ Conectar el botón de eliminar. Verificar que: (1) el modal de confirmación apa
 - [ ] **Eliminar con confirmación**: El modal de SweetAlert2 aparece antes de eliminar. Cancelar no hace nada. Confirmar elimina de la BD y de la tabla.
 - [ ] **Fallback de imágenes**: Artículos sin imagen muestran `default-cover.svg`. Imágenes con URL rota también muestran el fallback (probar con `onError`).
 - [ ] **Sin datos stale**: Después de crear o editar, la tabla del admin muestra los datos actualizados inmediatamente sin recargar la página.
+
+---
+
+## 📥 Descarga el entregable de esta semana
+
+¿No lograste completar la semana o quieres comparar tu código con la solución? Descarga el estado del proyecto al terminar la Semana 9:
+
+**[⬇️ Descargar entregable Semana 9 (.zip)](https://github.com/abecerraguz/blog-cms/archive/refs/tags/semana-09.zip)**
+
+**Qué incluye:** panel admin CRUD completo — `NuevoArticulo` y `EditarArticulo` conectados a la API, subida de imágenes con `FormData`, confirmación de eliminación con SweetAlert2, actualización optimista del estado en Zustand y `articulosService` con todos los métodos de escritura.
+
+**Setup después de descomprimir:**
+```bash
+cd blog-cms
+npm install
+cd frontend && npm install && cd ..
+cd backend && pnpm install
+# Crea backend/.env con: PORT=3001 y DATABASE_URL="postgresql://..."
+npx prisma migrate dev && pnpm seed
+cd ..
+npm run dev
+```

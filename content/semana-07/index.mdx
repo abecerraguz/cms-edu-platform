@@ -320,3 +320,25 @@ backend/
 
 > **En la Semana 8** añadirás los endpoints de escritura (POST, PUT, DELETE) y la arquitectura MVC completa con controllers, services y la capa de queries Prisma.
 
+---
+
+## 📥 Descarga el entregable de esta semana
+
+¿No lograste completar la semana o quieres comparar tu código con la solución? El entregable de la Semana 7 está incluido junto con el de la Semana 8 (se implementaron en el mismo sprint):
+
+**[⬇️ Descargar entregable Semanas 7-8 (.zip)](https://github.com/abecerraguz/blog-cms/archive/refs/tags/semana-08.zip)**
+
+**Qué incluye:** backend completo con Prisma 7 (`prisma.config.ts`, `schema.prisma`, `src/config/db.ts`, `src/generated/prisma/`), primera migración y seed de datos, rutas GET conectadas a PostgreSQL y la arquitectura MVC completa con todos los endpoints CRUD.
+
+**Setup después de descomprimir:**
+```bash
+cd blog-cms
+npm install
+cd backend && pnpm install
+# Crea backend/.env con: DATABASE_URL="postgresql://..."
+npx prisma migrate dev
+pnpm seed
+cd ..
+npm run dev
+```
+

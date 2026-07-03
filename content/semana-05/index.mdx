@@ -567,3 +567,22 @@ Para considerar completada la Semana 5, debes demostrar:
 - [ ] **Servidor Express arranca**: `npm run dev` desde la raíz `react-cms/` inicia el frontend y el backend en paralelo. `GET http://localhost:3001/api/articulos` responde con el array de artículos en JSON.
 - [ ] **Estructura monorepo creada**: El proyecto tiene la carpeta raíz `react-cms/` con `frontend/` (el proyecto Vite) y `backend/` (el servidor Express) dentro. El `package.json` raíz tiene el script `dev` con `concurrently`.
 - [ ] **Sin errores TypeScript**: `npm run build` del frontend compila sin errores.
+
+---
+
+## 📥 Descarga el entregable de esta semana
+
+¿No lograste completar la semana o quieres comparar tu código con la solución? Descarga el estado del proyecto al terminar la Semana 5:
+
+**[⬇️ Descargar entregable Semana 5 (.zip)](https://github.com/abecerraguz/blog-cms/archive/refs/tags/semana-05.zip)**
+
+**Qué incluye:** el proyecto completo en estructura monorepo — `frontend/` con Zustand store, hooks, context, componentes y tipos; `backend/` con servidor Express, CORS y rutas `/api/v1/articulos` devolviendo mock data; `package.json` raíz con `concurrently`.
+
+**Setup después de descomprimir:**
+```bash
+cd blog-cms
+npm install              # instala concurrently en la raíz
+cd frontend && npm install && cd ..
+cd backend && pnpm install && cd ..
+npm run dev              # arranca frontend (5173) + backend (3001) en paralelo
+```
