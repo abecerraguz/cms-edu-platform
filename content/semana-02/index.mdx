@@ -348,6 +348,26 @@ Crea una interfaz `Tarea` con `id`, `texto` y `completada`. Crea un componente `
 
 Esta semana transformas el HTML estático de la plantilla en componentes React tipados. Aún no hay datos reales — usarás los mocks que creaste en la semana 1. El objetivo es replicar visualmente la página de inicio (`index.html`) y el artículo de detalle (`detalle.html`) con React.
 
+### 📁 Archivos de esta semana
+
+```
+frontend/src/
+├── types/
+│   └── index.ts                  (semana 1)
+├── data/
+│   └── mockData.ts               ← NUEVO: array ARTICULOS_MOCK para desarrollo
+└── components/
+    ├── layout/                   ← subcarpeta para componentes de TODAS las páginas
+    │   └── Header.tsx            ← NUEVO: barra de navegación superior
+    ├── ArticuloCard.tsx          ← NUEVO: tarjeta reutilizable (2+ páginas)
+    └── CategoriaBadge.tsx        ← NUEVO: badge de categoría reutilizable
+```
+
+> **Regla de organización de componentes:**
+> - `src/components/layout/` → aparecen en **todas** las páginas (Header, Footer)
+> - `src/components/` → reutilizables en **2 o más** páginas
+> - Inline en la página → usados en **una sola** página (no crean su propio archivo)
+
 ### Paso 0 — Integrar los estilos de la plantilla
 
 Antes de crear cualquier componente, necesitas que tu app React use exactamente los mismos estilos de la plantilla. La plantilla usa **Bootstrap 5**, **Bootstrap Icons** y un CSS personalizado (`assets/css/main.css`).

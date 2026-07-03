@@ -7,8 +7,8 @@ objetivos:
   - "Configurar Vitest en un proyecto React + TypeScript con Vite"
   - "Escribir tests unitarios para funciones y hooks con TypeScript"
   - "Testear componentes React con React Testing Library tipado"
-  - "Crear mocks tipados de módulos, APIs y hooks"
-  - "Aplicar buenas prácticas de código TypeScript en proyectos React"
+  - "Aplicar el patrón vi.mock con factory sin variables externas (hoisting)"
+  - "Usar los wrappers BrowserRouter, TemaProvider y AuthProvider según el componente"
 recursos:
   - nombre: "Vitest - Documentación"
     url: "https://vitest.dev/"
@@ -16,13 +16,13 @@ recursos:
     url: "https://testing-library.com/docs/react-testing-library/intro/"
 ---
 
-> **🎯 Objetivo de la semana:** Al terminar sabrás configurar Vitest en el proyecto CMS, escribir tests para componentes y hooks, crear mocks tipados de servicios y aplicar buenas prácticas TypeScript que eviten el `any` drift en proyectos reales.
+> **🎯 Objetivo de la semana:** Al terminar sabrás configurar Vitest en el proyecto CMS, escribir tests para componentes y hooks, crear mocks tipados de servicios y aplicar los patrones de testing que el proyecto real usa.
 >
 > **🔑 Concepto clave:** El test como documentación — un test bien escrito describe el contrato de un componente: qué recibe, qué renderiza y cómo reacciona a las interacciones del usuario, sin acoplarse a detalles de implementación interna.
 >
-> **🛠 Tarea práctica:** Configurar Vitest en el CMS y escribir tests para `ArticuloCard`, el hook `useAdminPublicaciones` y el formulario de login del panel admin.
+> **🛠 Tarea práctica:** Configurar Vitest en el CMS y escribir tests para `ArticuloCard`, el hook `useFormularioArticulo` y el formulario de login del panel admin.
 >
-> **📋 Entregable:** `npm test` ejecuta al menos 10 tests que pasan. Los componentes y hooks clave del CMS tienen cobertura real de sus casos críticos.
+> **📋 Entregable:** `npm run test:run` ejecuta al menos 10 tests que pasan. Los tres artefactos clave del CMS tienen cobertura real.
 
 ---
 
@@ -173,6 +173,80 @@ function procesarRespuesta(data: unknown): Producto {
 
 ---
 
+## Patrones de testing del proyecto CMS
+
+### `vi.mock` con hoisting
+
+`vi.mock` se eleva antes de los imports — esto significa que **nunca puedes usar una variable importada dentro del factory**. La configuración del mock va en `beforeEach`:
+
+```typescript
+// ✅ Correcto — el factory no usa variables externas
+vi.mock('@/services/articulosService', () => ({
+  articulosService: {
+    getAll: vi.fn(),
+    getBySlug: vi.fn(),
+    resolverImagen: vi.fn((img) => img ?? '/uploads/default-cover.svg'),
+  }
+}))
+
+// La configuración de qué devuelve cada test va en beforeEach
+beforeEach(() => {
+  vi.mocked(articulosService.getAll).mockResolvedValue({
+    status: 'success',
+    data: ARTICULOS_MOCK,
+  })
+})
+```
+
+### `window.matchMedia` — ya está mockeado globalmente
+
+jsdom no implementa `window.matchMedia`. El proyecto lo mockea en `src/test/setup.ts`. **No lo añadas en tests individuales** — ya está global:
+
+```typescript
+// src/test/setup.ts — se ejecuta una vez para todos los tests
+Object.defineProperty(window, 'matchMedia', {
+  writable: true,
+  value: vi.fn().mockImplementation((query) => ({
+    matches: false, media: query, onchange: null,
+    addListener: vi.fn(), removeListener: vi.fn(),
+    addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  })),
+})
+```
+
+### Wrappers según el componente
+
+```typescript
+// Componentes con <Link> o useNavigate → BrowserRouter
+render(<ArticuloCard articulo={ARTICULOS_MOCK[0]} />, { wrapper: BrowserRouter })
+
+// Componentes con useTema() → TemaProvider
+render(<Header />, { wrapper: TemaProvider })
+
+// Componentes con useAuth() → AuthProvider
+render(<AdminLogin />, { wrapper: AuthProvider })
+
+// Combinados — crea un wrapper compuesto
+const Providers = ({ children }: { children: React.ReactNode }) => (
+  <BrowserRouter><TemaProvider><AuthProvider>{children}</AuthProvider></TemaProvider></BrowserRouter>
+)
+render(<AdminListado />, { wrapper: Providers })
+```
+
+### `getByText` vs `findByText`
+
+```typescript
+// getBy → el elemento existe AHORA (sin async)
+expect(screen.getByText('Mi primer artículo')).toBeInTheDocument()
+
+// findBy → el elemento aparecerá DESPUÉS de una operación async
+const titulo = await screen.findByText('Mi primer artículo')
+expect(titulo).toBeInTheDocument()
+```
+
+---
+
 ## Actividades prácticas
 
 **Actividad 1 — Tests unitarios (60 min)**
@@ -189,9 +263,35 @@ Auditar el proyecto completo: eliminar todos los `any`, aplicar `strict` mode si
 
 ---
 
-## 🛠 Proyecto CMS — Semana 8: Tests para el CMS
+## 🛠 Proyecto CMS — Semana 10: Tests para el CMS
 
 Esta semana escribes los tests que verifican que el CMS funciona correctamente. No testarás todo — testarás lo que importa: los componentes más críticos y los flujos que el usuario realiza realmente.
+
+### 📁 Archivos de esta semana
+
+```
+frontend/
+├── vite.config.ts                              ← ACTUALIZADO: añadir sección `test:`
+└── src/
+    └── test/                                   ← carpeta NUEVA esta semana
+        ├── setup.ts                            ← NUEVO: mock global de window.matchMedia
+        ├── components/
+        │   └── __tests__/
+        │       └── ArticuloCard.test.tsx       ← NUEVO
+        ├── hooks/
+        │   └── __tests__/
+        │       └── useFormularioArticulo.test.ts  ← NUEVO
+        └── pages/
+            └── admin/
+                └── __tests__/
+                    └── AdminLogin.test.tsx     ← NUEVO
+```
+
+> **Regla de ubicación de tests:** Los archivos `.test.ts` / `.test.tsx` van en `__tests__/` junto al archivo que testean, con el mismo nombre + `.test.ts`. Así cualquier miembro del equipo sabe dónde buscar el test de cualquier módulo.
+>
+> **`vitest/config` (no `vite`):** En `vite.config.ts`, importa `defineConfig` desde `'vitest/config'`, no desde `'vite'` — de lo contrario las opciones `test:` no tienen tipos.
+>
+> **`window.matchMedia` ya está mockeado:** El proyecto lo define en `src/test/setup.ts`. No lo repitas en archivos de test individuales.
 
 ### Paso 1 — Configurar Vitest en el proyecto CMS
 
@@ -253,61 +353,46 @@ describe("ArticuloCard", () => {
 });
 ```
 
-### Paso 3 — Test del hook `useAdminPublicaciones`
+### Paso 3 — Test del hook `useFormularioArticulo`
 
 ```tsx
-// src/hooks/__tests__/useAdminPublicaciones.test.ts
-import { renderHook, act } from "@testing-library/react";
-import { describe, it, expect } from "vitest";
-import { useAdminPublicaciones } from "../useAdminPublicaciones";
-import { ARTICULOS_MOCK } from "@/data/mockData";
+// src/hooks/__tests__/useFormularioArticulo.test.ts
+import { renderHook, act } from '@testing-library/react'
+import { describe, it, expect } from 'vitest'
+import { useFormularioArticulo } from '../useFormularioArticulo'
 
-describe("useAdminPublicaciones", () => {
-  it("devuelve todos los artículos cuando la búsqueda está vacía", () => {
-    const { result } = renderHook(() => useAdminPublicaciones());
-    expect(result.current.articulos.length).toBe(ARTICULOS_MOCK.length);
-  });
+describe('useFormularioArticulo', () => {
+  it('empieza con campos vacíos y esValido false', () => {
+    const { result } = renderHook(() => useFormularioArticulo())
+    expect(result.current.campos.titulo).toBe('')
+    expect(result.current.esValido).toBe(false)
+  })
 
-  it("filtra artículos por título", () => {
-    const { result } = renderHook(() => useAdminPublicaciones());
+  it('esValido true cuando el título tiene 3+ caracteres', () => {
+    const { result } = renderHook(() => useFormularioArticulo())
+    act(() => { result.current.setCampo('titulo', 'Mi artículo') })
+    expect(result.current.esValido).toBe(true)
+  })
 
+  it('setCampo actualiza solo el campo indicado', () => {
+    const { result } = renderHook(() => useFormularioArticulo())
+    act(() => { result.current.setCampo('extracto', 'Texto extracto') })
+    expect(result.current.campos.extracto).toBe('Texto extracto')
+    expect(result.current.campos.titulo).toBe('') // los demás no cambian
+  })
+
+  it('reset vuelve todos los campos a vacío', () => {
+    const { result } = renderHook(() => useFormularioArticulo())
     act(() => {
-      result.current.buscar("Angewomon");
-    });
-
-    expect(result.current.articulos.length).toBe(1);
-    expect(result.current.articulos[0].titulo).toMatch(/Angewomon/i);
-  });
-
-  it("filtra artículos por nombre de categoría", () => {
-    const { result } = renderHook(() => useAdminPublicaciones());
-
-    act(() => {
-      result.current.buscar("Tecnología");
-    });
-
-    result.current.articulos.forEach((a) => {
-      expect(a.categoria.nombre).toMatch(/Tecnología/i);
-    });
-  });
-
-  it("devuelve todos los artículos al limpiar la búsqueda", () => {
-    const { result } = renderHook(() => useAdminPublicaciones());
-
-    act(() => { result.current.buscar("algo inexistente"); });
-    act(() => { result.current.buscar(""); });
-
-    expect(result.current.articulos.length).toBe(ARTICULOS_MOCK.length);
-  });
-
-  it("totalFiltrados coincide con la longitud del array", () => {
-    const { result } = renderHook(() => useAdminPublicaciones());
-
-    act(() => { result.current.buscar("Angewomon"); });
-
-    expect(result.current.totalFiltrados).toBe(result.current.articulos.length);
-  });
-});
+      result.current.setCampo('titulo', 'Algo')
+      result.current.setCampo('extracto', 'Otro')
+    })
+    act(() => { result.current.reset() })
+    expect(result.current.campos.titulo).toBe('')
+    expect(result.current.campos.extracto).toBe('')
+    expect(result.current.esValido).toBe(false)
+  })
+})
 ```
 
 ### Paso 4 — Test del formulario de login
@@ -364,6 +449,6 @@ describe("AdminLogin", () => {
 Para considerar completada la Semana 8, tu suite de tests debe demostrar:
 
 - [ ] **Vitest configurado**: `npm test` corre sin configuración adicional. El comando `npm run coverage` genera un reporte HTML en `coverage/`.
-- [ ] **Mínimo 10 tests pasando**: Cubriendo al menos `ArticuloCard` (render + click), `useAdminPublicaciones` (filtrado en tiempo real), `AdminLogin` (credenciales correctas e incorrectas) y `NuevoArticulo` (validación del formulario).
+- [ ] **Mínimo 10 tests pasando**: Cubriendo al menos `ArticuloCard` (render + interacción), `useFormularioArticulo` (setCampo, reset, esValido), `AdminLogin` (credenciales correctas e incorrectas) y `NuevoArticulo` (validación del formulario).
 - [ ] **Al menos 1 test con mock de servicio**: Un test que usa `vi.mock` para aislar el componente de la API real.
 - [ ] **Audit de tipos aprobado**: `npm run build` compila sin errores. No hay `any` en el código del proyecto. Al menos un uso de `unknown` con type narrowing en el manejo de errores.

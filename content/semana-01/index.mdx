@@ -261,6 +261,16 @@ Esta semana arranca el proyecto que irás construyendo durante todo el programa:
 
 Se te entrega una plantilla HTML/CSS/JS ya terminada con el diseño visual del CMS. Tu trabajo es convertirla progresivamente en una aplicación React tipada.
 
+### 📁 Archivos de esta semana
+
+```
+frontend/src/
+└── types/
+    └── index.ts     ← NUEVO: interfaces Articulo, Categoria, Tag, EstadoArticulo
+```
+
+> **Dónde va:** `src/types/index.ts` es el único archivo de tipos del frontend. Todas las interfaces del dominio van aquí y se importan desde cualquier parte del proyecto con `import type { Articulo } from '@/types'`. Nunca definas tipos dentro de un componente o página.
+
 > **⬇️ Descarga la plantilla antes de comenzar:**
 > [**plantilla-cms.zip**](/downloads/plantilla-cms.zip) — contiene el HTML/CSS/JS del blog público y el panel admin completo.
 

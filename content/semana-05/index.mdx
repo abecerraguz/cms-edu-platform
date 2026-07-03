@@ -1,19 +1,19 @@
 ---
 titulo: "Gestión de estado global"
-descripcion: "useReducer tipado, Redux Toolkit con TypeScript y Zustand como alternativa moderna."
+descripcion: "useReducer tipado, Zustand para estado compartido y arranque del servidor Express base en monorepo."
 duracion: "8h"
 semana: 5
 objetivos:
-  - "Implementar useReducer con acciones y estado completamente tipados"
-  - "Configurar Redux Toolkit en un proyecto React + TypeScript"
-  - "Crear slices, selectors y thunks tipados con Redux Toolkit"
-  - "Implementar Zustand como alternativa ligera con tipos inferidos"
-  - "Decidir qué solución de estado usar según la complejidad del proyecto"
+  - "Distinguir cuándo usar useState, useReducer, Context API y Zustand"
+  - "Crear un store Zustand completamente tipado con acciones y estado derivado"
+  - "Reestructurar un proyecto Vite en monorepo con carpetas frontend/ y backend/"
+  - "Levantar un servidor Express base con rutas /api/v1/articulos devolviendo mock data"
+  - "Ejecutar frontend y backend en paralelo con concurrently"
 recursos:
-  - nombre: "Redux Toolkit - TypeScript Quick Start"
-    url: "https://redux-toolkit.js.org/tutorials/typescript"
   - nombre: "Zustand - TypeScript Guide"
     url: "https://docs.pmnd.rs/zustand/guides/typescript"
+  - nombre: "concurrently - npm"
+    url: "https://www.npmjs.com/package/concurrently"
 ---
 
 > **🎯 Objetivo de la semana:** Al terminar sabrás gestionar estado complejo con `useReducer`, configurar un store Zustand para el panel admin y levantar el servidor Express base que alimentará el CMS en las semanas siguientes.
@@ -61,9 +61,9 @@ function carritoReducer(state: CarritoState, action: CarritoAction): CarritoStat
 
 El `default: never` es el truco para verificar exhaustividad: si añades una acción nueva al union type sin actualizar el reducer, TypeScript lanza un error de compilación en el `default`. Es tu red de seguridad cuando el proyecto crece.
 
-## 2. Redux Toolkit: referencia de industria
+## 2. Redux Toolkit: lectura de referencia (no se usa en el proyecto)
 
-En proyectos con equipos grandes, Redux Toolkit (RTK) es el estándar porque sus reglas generan un patrón predecible que todos siguen. No es más simple que Zustand — es más estructurado. El concepto central es el **slice**: estado + reducers + action creators en un solo objeto. `createAsyncThunk` añade operaciones asíncronas con los tres estados (`pending` / `fulfilled` / `rejected`) generados automáticamente:
+> **⚠️ Nota pedagógica:** Redux Toolkit no se usa en el CMS Blog del programa. El proyecto elige Zustand por su menor boilerplate para equipos pequeños. Esta sección existe como referencia de industria — en equipos grandes y apps enterprise, RTK es el estándar. Léela si quieres entender por qué existe Redux, pero no la apliques en el proyecto.
 
 ```tsx
 // slice + thunk: estado, reducers y petición asíncrona en un lugar
@@ -133,8 +133,8 @@ function ContadorCarrito() {
 **Actividad 1 — Carrito con useReducer (60 min)**
 Implementar un carrito de compras completo con `useReducer`. Acciones: agregar, eliminar, cambiar cantidad, limpiar. Calcular total con `useMemo`.
 
-**Actividad 2 — Redux Toolkit: CRUD (90 min)**
-Crear un store con un slice de `tareas`. Implementar un thunk para cargar tareas desde una API mock. Conectar a componentes con `useAppSelector` y `useAppDispatch`.
+**Actividad 2 — Zustand: store con filtros (60 min)**
+Crear un store Zustand para una lista de tareas con `busqueda` y `filtroEstado` como estado. Implementar `setBusqueda`, `setFiltroEstado`, `toggleEstado` y `eliminar`. Usar un componente separado que solo lea `busqueda` del store y verifique que no re-renderiza cuando cambia otro campo.
 
 **Actividad 3 — Zustand: refactor (45 min)**
 Migrar el carrito de la Actividad 1 a Zustand. Comparar la cantidad de boilerplate y la experiencia de desarrollo.
@@ -145,6 +145,34 @@ Migrar el carrito de la Actividad 1 a Zustand. Comparar la cantidad de boilerpla
 
 El panel admin del CMS maneja una tabla de artículos con búsqueda, filtros por estado y acciones CRUD. Esto tiene demasiado estado interrelacionado para `useState` sueltos — es el caso de uso perfecto para `useReducer` o Zustand.
 
+### 📁 Archivos de esta semana
+
+```
+cms-blog/                                     ← raíz del monorepo (se crea ahora)
+├── package.json                              ← NUEVO: script "dev" con concurrently
+├── frontend/                                 ← RENOMBRADO desde cms-blog/
+│   └── src/
+│       ├── store/                            ← carpeta NUEVA esta semana
+│       │   └── articulosStore.ts             ← NUEVO: store Zustand del panel admin
+│       ├── hooks/
+│       │   └── useArticulosFiltrados.ts      ← ACTUALIZADO: ahora lee de Zustand
+│       ├── context/ ...                      (semana 4)
+│       ├── hooks/ ...                        (semana 3)
+│       └── types/ ...                        (semana 1)
+└── backend/                                  ← carpeta NUEVA esta semana
+    ├── package.json                          ← NUEVO: dependencias Express
+    ├── tsconfig.json                         ← NUEVO
+    ├── .env                                  ← NUEVO: PORT, FRONTEND_URL (en .gitignore)
+    └── src/
+        ├── app.ts                            ← NUEVO: servidor Express con CORS
+        └── routes/
+            └── articulos.ts                  ← NUEVO: GET /api/v1/articulos (mock)
+```
+
+> **Regla del store:** `src/store/` — solo stores Zustand. Nombre: `nombreStore.ts` con sufijo `Store`. El store **no llama a `fetch` directamente** en esta semana — eso llega en S6 con `articulosService`.
+>
+> **⚠️ Crítico sobre el backend:** Levanta siempre el backend **desde `cms-blog/backend/`** o con `--prefix backend` desde la raíz. Si lo levantas desde la raíz sin prefix, `dotenv` no encuentra `backend/.env` y Prisma no conecta.
+
 ### Paso 1 — Store de artículos con Zustand
 
 Instala Zustand y crea el store del panel admin:
@@ -153,77 +181,98 @@ Instala Zustand y crea el store del panel admin:
 npm install zustand
 ```
 
-```tsx
+```ts
 // src/store/articulosStore.ts
-import { create } from "zustand";
-import type { Articulo, ArticuloListado, EstadoArticulo } from "@/types";
-import { ARTICULOS_MOCK } from "@/data/mockData";
-
-interface FiltrosAdmin {
-  busqueda: string;
-  estado: EstadoArticulo | "todos";
-  pagina: number;
-}
+import { create } from 'zustand'
+import type { ArticuloListado, EstadoArticulo } from '@/types'
+import { articulosService } from '@/services/articulosService'
 
 interface ArticulosState {
-  articulos: ArticuloListado[];
-  filtros: FiltrosAdmin;
-  cargando: boolean;
-  // Acciones
-  setBusqueda: (texto: string) => void;
-  setEstado: (estado: EstadoArticulo | "todos") => void;
-  eliminarArticulo: (id: number) => void;
-  toggleEstado: (id: number) => void;
+  // ── Datos ──────────────────────────────────────────
+  articulos: ArticuloListado[]
+  busqueda: string
+  filtroEstado: EstadoArticulo | 'todos'
+  cargando: boolean
+  error: string | null
+
+  // ── Acciones ───────────────────────────────────────
+  cargarArticulos: () => Promise<void>
+  setBusqueda: (texto: string) => void
+  setFiltroEstado: (estado: EstadoArticulo | 'todos') => void
+  eliminarArticulo: (id: number) => void
+  toggleEstado: (id: number) => void
 }
 
-export const useArticulosStore = create<ArticulosState>((set) => ({
-  articulos: ARTICULOS_MOCK.map(({ id, titulo, slug, categoria, estado, fechaPublicacion }) => ({
-    id, titulo, slug, categoria, estado, fechaPublicacion,
-  })),
-  filtros: { busqueda: "", estado: "todos", pagina: 1 },
+export const useArticulosStore = create<ArticulosState>((set, get) => ({
+  articulos: [],
+  busqueda: '',
+  filtroEstado: 'todos',
   cargando: false,
+  error: null,
 
-  setBusqueda: (busqueda) =>
-    set((s) => ({ filtros: { ...s.filtros, busqueda, pagina: 1 } })),
+  // En S5 carga desde mock. En S7 cargará desde la API real.
+  cargarArticulos: async () => {
+    set({ cargando: true, error: null })
+    try {
+      const res = await articulosService.getAll(undefined, true)
+      set({ articulos: res.data, cargando: false })
+    } catch {
+      set({ error: 'No se pudieron cargar los artículos.', cargando: false })
+    }
+  },
 
-  setEstado: (estado) =>
-    set((s) => ({ filtros: { ...s.filtros, estado, pagina: 1 } })),
+  setBusqueda: (busqueda) => set({ busqueda }),
+  setFiltroEstado: (filtroEstado) => set({ filtroEstado }),
 
   eliminarArticulo: (id) =>
-    set((s) => ({ articulos: s.articulos.filter((a) => a.id !== id) })),
-
-  toggleEstado: (id) =>
-    set((s) => ({
-      articulos: s.articulos.map((a) =>
-        a.id === id
-          ? { ...a, estado: a.estado === "publicado" ? "borrador" : "publicado" }
-          : a
-      ),
+    set((state) => ({
+      articulos: state.articulos.filter((a) => a.id !== id)
     })),
-}));
+
+  toggleEstado: async (id) => {
+    const articulo = get().articulos.find((a) => a.id === id)
+    if (!articulo) return
+    const nuevoEstado = articulo.estado === 'publicado' ? 'borrador' : 'publicado'
+    // Actualización optimista — cambia la UI antes de esperar al servidor
+    set((state) => ({
+      articulos: state.articulos.map((a) =>
+        a.id === id ? { ...a, estado: nuevoEstado } : a
+      )
+    }))
+    // En S9 se añadirá la llamada real a articulosService.actualizar()
+    // y el rollback si falla
+  },
+}))
 ```
 
-### Paso 2 — Selector derivado para artículos filtrados
+### Paso 2 — Conectar `useArticulosFiltrados` al store
 
-```tsx
-// src/hooks/useArticulosFiltrados.ts
-import { useMemo } from "react";
-import { useArticulosStore } from "@/store/articulosStore";
+En la Semana 3 creaste `useArticulosFiltrados` recibiendo los datos como parámetros. Ahora que existe el store, simplifica el hook para que lea directamente de Zustand:
+
+```ts
+// src/hooks/useArticulosFiltrados.ts — versión final (Semana 5)
+import { useMemo } from 'react'
+import { useArticulosStore } from '@/store/articulosStore'
 
 export function useArticulosFiltrados() {
-  const { articulos, filtros } = useArticulosStore();
+  const articulos    = useArticulosStore((state) => state.articulos)
+  const busqueda     = useArticulosStore((state) => state.busqueda)
+  const filtroEstado = useArticulosStore((state) => state.filtroEstado)
 
   return useMemo(() => {
     return articulos.filter((a) => {
       const coincideBusqueda = a.titulo
         .toLowerCase()
-        .includes(filtros.busqueda.toLowerCase());
+        .includes(busqueda.toLowerCase())
       const coincideEstado =
-        filtros.estado === "todos" || a.estado === filtros.estado;
-      return coincideBusqueda && coincideEstado;
-    });
-  }, [articulos, filtros]);
+        filtroEstado === 'todos' || a.estado === filtroEstado
+      return coincideBusqueda && coincideEstado
+    })
+  }, [articulos, busqueda, filtroEstado])
 }
+```
+
+Los selectores granulares (`state => state.busqueda`) evitan re-renders innecesarios: `useArticulosFiltrados` solo se actualiza cuando cambia `articulos`, `busqueda` o `filtroEstado`, no cuando cambia cualquier otro campo del store.
 ```
 
 ### Paso 3 — Tabla del panel admin

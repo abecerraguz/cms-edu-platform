@@ -1,339 +1,322 @@
 ---
-titulo: "Consumo de APIs y datos asíncronos"
-descripcion: "Fetch y Axios tipados, TanStack Query, manejo de errores y tipado de respuestas de API."
+titulo: "Capa de servicios y conexión a la base de datos"
+descripcion: "Capa de servicios con Fetch tipado, introducción a Prisma ORM 7 y primera conexión real a PostgreSQL."
 duracion: "8h"
 semana: 7
 objetivos:
-  - "Realizar peticiones HTTP tipadas con Fetch API nativo"
-  - "Configurar Axios con interceptores y tipos genéricos"
-  - "Usar TanStack Query (React Query) para sincronizar estado del servidor"
-  - "Manejar errores de API de forma tipada y escalable"
-  - "Crear una capa de servicios tipada que abstraiga las llamadas HTTP"
+  - "Consolidar el patrón fetchJSON genérico como capa de servicios del frontend"
+  - "Comprender por qué los componentes nunca llaman a fetch directamente"
+  - "Instalar y configurar Prisma ORM 7 con @prisma/adapter-pg"
+  - "Definir el schema.prisma con los modelos Articulo y Categoria"
+  - "Reemplazar el array mock del backend por consultas reales a PostgreSQL con Prisma"
 recursos:
-  - nombre: "TanStack Query - TypeScript"
-    url: "https://tanstack.com/query/latest/docs/framework/react/typescript"
-  - nombre: "Axios - TypeScript"
-    url: "https://axios-http.com/docs/intro"
+  - nombre: "Prisma ORM - Documentación"
+    url: "https://www.prisma.io/docs"
+  - nombre: "Prisma con PostgreSQL - Getting Started"
+    url: "https://www.prisma.io/docs/getting-started/setup-prisma/start-from-scratch/relational-databases-node-postgresql"
 ---
 
-> **🎯 Objetivo de la semana:** Al terminar sabrás realizar peticiones HTTP tipadas con Fetch y Axios, gestionar el estado del servidor con TanStack Query y separar todas las llamadas HTTP en una capa de servicios que los componentes consumen sin saber cómo funciona la API por dentro.
+> **🎯 Objetivo de la semana:** Al terminar habrás consolidado `articulosService.ts` como la capa de servicios tipada del frontend y conectado el backend a PostgreSQL real usando Prisma ORM 7 — sin cambiar una sola línea del código React.
 >
-> **🔑 Concepto clave:** Separación cliente-servidor — los componentes React no deberían saber si los datos vienen de REST, GraphQL o un mock. La capa de servicios es el contrato: si la API cambia, solo cambia el servicio, no los componentes.
+> **🔑 Concepto clave:** Separación cliente-servidor — el frontend no sabe si los datos vienen de un array en memoria, de PostgreSQL o de una API externa. Solo ve el contrato de `articulosService`. Si el backend cambia, solo cambia el backend.
 >
-> **🛠 Tarea práctica:** Esta semana no cambia el frontend. Solo el backend: reemplazar el array `ARTICULOS_MOCK` del servidor por consultas reales a PostgreSQL usando `pg.Pool`.
+> **🛠 Tarea práctica:** Esta semana tiene dos mitades:
+> - **Frontend**: revisar y consolidar `articulosService.ts` de S6 (manejo de errores correcto, tipos genéricos, `resolverImagen`)
+> - **Backend**: instalar Prisma 7, definir `schema.prisma`, ejecutar la primera migración y reemplazar el array mock por `prisma.articulo.findMany()`
 >
-> **📋 Entregable:** `GET /api/articulos` devuelve artículos de PostgreSQL. La `HomePage` los muestra sin cambiar una sola línea del código React.
+> **📋 Entregable:** `GET /api/v1/articulos` devuelve artículos reales de PostgreSQL. La `HomePage` los muestra sin cambiar una sola línea del código React. TanStack Query y Axios no se usan en este proyecto.
 
 ---
 
-## 1. Fetch API tipado con TypeScript
+## 1. La capa de servicios: por qué nunca fetch directo
 
-Hasta ahora los componentes leían datos de arrays importados directamente — `ARTICULOS_MOCK` nunca falla, nunca tarda y nunca devuelve un error HTTP. La red real es distinta: las peticiones pueden fallar, llegar vacías o devolver un cuerpo que no es JSON. TypeScript no puede verificar lo que llega desde el servidor en runtime, pero sí puede garantizar que el código lo trata como el tipo correcto.
+En la Semana 6 creaste `articulosService.ts`. Revisemos por qué el patrón importa y qué lo hace correcto.
 
-El patrón base es una función genérica que acepta el tipo esperado como parámetro de tipo. El punto crítico está en `response.ok`: `fetch` no lanza un error en respuestas 4xx/5xx — devuelve la respuesta con `ok: false`. Si no verificas esto, parsearás silenciosamente un cuerpo de error como si fuera datos válidos:
+La regla es simple: **ningún componente llama a `fetch` directamente**. Si `HomePage` hace `fetch('/api/v1/articulos')` y la URL cambia a `/api/v2/articulos`, tienes que encontrar y cambiar cada componente que haga esa llamada. Con la capa de servicios, el cambio es en un solo lugar.
 
-```tsx
-// Helper genérico: el tipo T viaja desde quien llama hasta el return
-async function fetchData<T>(url: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(url, options);
-  if (!res.ok) {
-    // fetch no lanza error en 404/500 — hay que hacerlo manualmente
-    throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-  }
-  return res.json() as Promise<T>;
-}
+El `fetchJSON<T>` genérico es el corazón del servicio. Hay dos detalles críticos que el código debe tener:
 
-// TypeScript sabe exactamente qué devuelve cada llamada
-const articulos = await fetchData<Articulo[]>("/api/articulos");
-const uno      = await fetchData<Articulo>(`/api/articulos/${slug}`);
-```
-
-Para tipar las variables de entorno de Vite, extiende la interfaz global en `vite-env.d.ts`:
-
-```tsx
-interface ImportMetaEnv {
-  readonly VITE_API_URL: string;
-}
-// A partir de aquí, import.meta.env.VITE_API_URL tiene autocompletado
-```
-
-## 2. Axios con TypeScript
-
-`fetch` requiere verificar `response.ok` manualmente en cada llamada y no tiene forma nativa de adjuntar headers globales. Axios resuelve ambos problemas con `axios.create()` — una instancia configurada con `baseURL`, `timeout` y headers predeterminados que hereda toda petición hecha a través de ella.
-
-Los interceptores son el diferenciador clave: permiten inyectar el token JWT en cada request sin tocarlo en cada servicio, y capturar errores 401 globalmente para redirigir al login. `isAxiosError` es el type guard que Axios exporta — sin él TypeScript trataría el `catch (e)` como `unknown` y no podría acceder a `e.response`:
-
-```tsx
-import axios, { isAxiosError } from "axios";
-
-const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_URL,
-  timeout: 10_000,
-});
-
-// Interceptor de request: adjunta el token sin repetirlo en cada servicio
-apiClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem("token");
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
-});
-
-// El tipo genérico viaja hasta response.data — TypeScript infiere el tipo
-async function getArticulos(): Promise<Articulo[]> {
-  const { data } = await apiClient.get<Articulo[]>("/articulos");
-  return data;
-}
-
-// En el catch, isAxiosError actúa como type guard para acceder a e.response
-async function crearArticulo(body: NuevoArticulo) {
-  try {
-    return await apiClient.post<Articulo>("/articulos", body);
-  } catch (e) {
-    if (isAxiosError(e)) console.error(e.response?.data); // tipo conocido
-    throw e;
-  }
-}
-```
-
-## 3. TanStack Query (React Query) con TypeScript
-
-Incluso con Axios, aún necesitas gestionar `loading`, `error` y `data` manualmente con `useState` en cada componente. Si dos componentes distintos necesitan los mismos artículos, hacen dos peticiones separadas. Si creas un artículo, necesitas actualizar el estado en todos los lugares que lo muestran. TanStack Query resuelve todo esto con un caché centralizado del servidor.
-
-`useQuery` infiere los tipos directamente del `queryFn` — no hay que declarar genéricos adicionales. `useMutation` cierra el ciclo de escritura: cuando la mutación termina, `invalidateQueries` marca el caché de lectura como obsoleto y los componentes se actualizan solos:
-
-```tsx
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-
-// Los tipos se infieren del queryFn — no hay que repetirlos
-function useArticulos(filtros?: { estado?: string }) {
-  return useQuery({
-    queryKey: ["articulos", filtros],   // clave única por combinación de filtros
-    queryFn: () => articulosService.getAll(filtros),
-    staleTime: 1000 * 60 * 5,          // 5 min antes de refetch automático
-  });
-}
-
-function useCrearArticulo() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (data: NuevoArticulo) => articulosService.crear(data),
-    onSuccess: () => {
-      // Invalida el caché: todos los componentes que usen useArticulos se actualizan
-      queryClient.invalidateQueries({ queryKey: ["articulos"] });
-    },
-  });
-}
-
-// En el componente: sin useState para loading/error/data
-function ArticulosAdmin() {
-  const { data, isLoading, isError } = useArticulos();
-  const { mutate: crear, isPending } = useCrearArticulo();
-
-  if (isLoading) return <Spinner />;
-  if (isError)   return <ErrorBanner />;
-
-  return <TablaArticulos articulos={data?.data ?? []} onCrear={crear} />;
-}
-```
-
-## 4. Capa de servicios tipada
-
-Llamar a `fetch` o Axios directamente desde los componentes crea acoplamiento directo entre la UI y los detalles de la API: si cambia la URL base o la estructura de la respuesta, hay que buscar y cambiar en múltiples archivos. El patrón de **servicio** agrupa todas las llamadas de un recurso en un objeto, exporta una sola interfaz y deja a los componentes sin saber si detrás hay REST, GraphQL o un mock:
-
-```tsx
-// src/services/articulosService.ts — una sola fuente de verdad para la API
-import type { Articulo, NuevoArticulo, ApiResponse } from "@/types";
-
-const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
-
-async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
+```typescript
+// src/services/articulosService.ts — patrón correcto completo
+async function fetchJSON<T>(url: string, init?: RequestInit, noCache = false): Promise<T> {
   const res = await fetch(`${BASE}${url}`, {
-    headers: { "Content-Type": "application/json" },
+    headers: { 'Content-Type': 'application/json' },
+    cache: noCache ? 'no-store' : 'default',
     ...init,
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json() as Promise<T>;
+  })
+
+  // ⚠️ fetch NO lanza error en 4xx/5xx — hay que verificar res.ok manualmente
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    // Usa el mensaje del servidor si existe, no solo el código HTTP
+    throw new Error(body.message ?? `HTTP ${res.status}`)
+  }
+
+  return res.json() as Promise<T>
+}
+```
+
+El flag `noCache` es importante para el panel admin: el backend usa `Cache-Control: max-age=60` en los GET, lo que hace que el navegador sirva respuestas cacheadas en lugar de pedir datos frescos. Al llamar con `noCache: true`, el servicio fuerza una petición real al servidor:
+
+```typescript
+// Panel admin — siempre datos frescos
+const res = await articulosService.getAll(undefined, true) // noCache = true
+
+// Página pública — puede usar caché
+const res = await articulosService.getAll({ estado: 'publicado' })
+```
+
+---
+
+## 2. Prisma ORM 7: introducción
+
+Prisma es un ORM (Object-Relational Mapper) que genera un cliente TypeScript fuertemente tipado a partir de tu schema. En lugar de escribir SQL manualmente, escribes consultas como objetos TypeScript y Prisma genera el SQL correcto para tu base de datos.
+
+**Prisma 7 tiene cambios breaking respecto a versiones anteriores:**
+
+| Aspecto | Prisma < 7 | Prisma 7 |
+|---|---|---|
+| `DATABASE_URL` | En `schema.prisma` | En `prisma.config.ts` |
+| Driver | Interno | `@prisma/adapter-pg` explícito |
+| Cliente generado | `node_modules/.prisma/` | `generated/prisma/` (configurable) |
+| Generator | `prisma-client-js` | `prisma-client` |
+
+La instalación en el backend:
+
+```bash
+# Desde backend/
+pnpm add prisma @prisma/client @prisma/adapter-pg
+pnpm approve-builds  # autoriza la compilación de binarios nativos de Prisma
+```
+
+---
+
+## 3. Configurar Prisma 7 en el backend
+
+### prisma.config.ts
+
+En Prisma 7 la `DATABASE_URL` ya no va en `schema.prisma` — va en un archivo de configuración dedicado:
+
+```typescript
+// backend/prisma.config.ts
+import path from 'node:path'
+import { defineConfig } from 'prisma/config'
+
+export default defineConfig({
+  earlyAccess: true,
+  schema: path.join(import.meta.dirname, 'prisma/schema.prisma'),
+})
+```
+
+La `DATABASE_URL` se lee del `.env` directamente a través del adapter `PrismaPg`.
+
+### schema.prisma
+
+```prisma
+// backend/prisma/schema.prisma
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
 }
 
-export const articulosService = {
-  getAll:    (p?: { estado?: string; busqueda?: string }) => {
-    const qs = p ? new URLSearchParams(p as Record<string, string>).toString() : "";
-    return fetchJSON<ApiResponse<Articulo[]>>(`/api/articulos${qs ? `?${qs}` : ""}`);
-  },
-  getBySlug: (slug: string) =>
-    fetchJSON<ApiResponse<Articulo>>(`/api/articulos/${slug}`),
-  crear:     (data: NuevoArticulo) =>
-    fetchJSON<ApiResponse<Articulo>>("/api/articulos", {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
-  eliminar:  (id: number) =>
-    fetchJSON<void>(`/api/articulos/${id}`, { method: "DELETE" }),
-};
-// Los hooks y componentes solo importan articulosService — nunca fetch directo
+model Categoria {
+  id        Int        @id @default(autoincrement())
+  nombre    String
+  slug      String     @unique
+  color     String
+  articulos Articulo[]
+}
+
+model Articulo {
+  id               Int       @id @default(autoincrement())
+  titulo           String
+  slug             String    @unique
+  extracto         String?
+  contenido        String?
+  imagen           String?
+  categoriaId      Int
+  categoria        Categoria @relation(fields: [categoriaId], references: [id])
+  estado           EstadoArticulo @default(borrador)
+  autor            String         @default("Administrador")
+  tiempoLectura    Int            @default(5)
+  fechaPublicacion DateTime       @default(now())
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+}
+
+enum EstadoArticulo {
+  borrador
+  publicado
+  archivado
+}
 ```
+
+### db.ts — cliente con adapter
+
+```typescript
+// backend/src/config/db.ts
+import { PrismaPg } from '@prisma/adapter-pg'
+import { PrismaClient } from '../generated/prisma/client'
+import 'dotenv/config'
+
+const adapter = new PrismaPg({
+  connectionString: process.env.DATABASE_URL ?? ''
+})
+
+export const prisma = new PrismaClient({ adapter })
+
+prisma.$connect()
+  .then(() => console.log('✅ PostgreSQL conectado via Prisma'))
+  .catch((e) => console.error('❌ Error Prisma:', e))
+```
+
+---
+
+## 4. Primera migración y reemplazar el mock
+
+### Ejecutar la migración
+
+```bash
+# Desde backend/
+npx prisma migrate dev --name init
+npx prisma generate  # regenerar el cliente TypeScript
+```
+
+Esto crea las tablas en PostgreSQL y genera el cliente tipado en `src/generated/prisma/`.
+
+### Seed de datos iniciales
+
+```bash
+# backend/package.json
+{
+  "scripts": {
+    "seed": "npx tsx prisma/seed.ts"
+  }
+}
+```
+
+```typescript
+// backend/prisma/seed.ts
+import { prisma } from '../src/config/db'
+
+async function main() {
+  // Crear categorías
+  const tech = await prisma.categoria.upsert({
+    where: { slug: 'tecnologia' },
+    update: {},
+    create: { nombre: 'Tecnología', slug: 'tecnologia', color: '#3b82f6' },
+  })
+
+  // Crear artículo de prueba
+  await prisma.articulo.upsert({
+    where: { slug: 'primer-articulo' },
+    update: {},
+    create: {
+      titulo: 'Mi primer artículo',
+      slug: 'primer-articulo',
+      extracto: 'Este es el extracto del artículo.',
+      contenido: '<p>Contenido del artículo.</p>',
+      categoriaId: tech.id,
+      estado: 'publicado',
+    },
+  })
+
+  console.log('✅ Seed completado')
+}
+
+main().catch(console.error).finally(() => prisma.$disconnect())
+```
+
+### Reemplazar el mock en el router
+
+```typescript
+// backend/src/routes/articulos.ts — conectado a Prisma
+import { Router } from 'express'
+import { prisma } from '../config/db'
+
+const router = Router()
+
+router.get('/', async (req, res) => {
+  const { estado, busqueda } = req.query
+  const where: Record<string, unknown> = {}
+
+  if (estado && estado !== 'todos') where.estado = String(estado)
+  if (busqueda) where.titulo = { contains: String(busqueda), mode: 'insensitive' }
+
+  const articulos = await prisma.articulo.findMany({
+    where,
+    include: { categoria: true },
+    orderBy: { createdAt: 'desc' },
+  })
+
+  res.json({ status: 'success', data: articulos })
+})
+
+router.get('/:slug', async (req, res) => {
+  const articulo = await prisma.articulo.findUnique({
+    where: { slug: req.params.slug },
+    include: { categoria: true },
+  })
+  if (!articulo) return res.status(404).json({ status: 'error', message: 'No encontrado' })
+  res.json({ status: 'success', data: articulo })
+})
+
+export default router
+```
+
+> **Resultado esperado:** `GET /api/v1/articulos` devuelve artículos de PostgreSQL. La `HomePage` y `DetallePage` los muestran sin cambiar una sola línea del código React — el contrato de `articulosService` no cambió.
 
 ---
 
 ## Actividades prácticas
 
-**Actividad 1 — Fetch genérico (45 min)**
-Crear la función `fetchData<T>` con manejo de errores. Cargar una lista de posts de `jsonplaceholder.typicode.com` y tipar la respuesta.
+**Actividad 1 — Revisar articulosService (30 min)**
+Verifica que tu `articulosService.ts` verifica `res.ok`, lanza Error con el mensaje del servidor y tiene `resolverImagen`. Llama a `articulosService.getAll({ estado: 'publicado' })` desde la `HomePage` y confirma que los artículos se cargan desde el servidor Express.
 
-**Actividad 2 — Instancia Axios (60 min)**
-Crear una instancia Axios con `baseURL` desde env var. Implementar interceptor de request para token y interceptor de response para logging de errores.
+**Actividad 2 — Configurar Prisma 7 (60 min)**
+Instalar Prisma, crear `schema.prisma` con los modelos exactos del proyecto, ejecutar `migrate dev --name init`, verificar que las tablas existen en PostgreSQL con `npx prisma studio`.
 
-**Actividad 3 — TanStack Query (90 min)**
-Configurar `QueryClientProvider` en la app. Implementar `useProductos` y `useCrearProducto`. Crear una UI con listado, formulario de creación y estado de loading/error.
+**Actividad 3 — Seed y primer GET con Prisma (45 min)**
+Crear `prisma/seed.ts` con al menos 2 categorías y 4 artículos. Ejecutar `pnpm seed`. Reemplazar el array mock en el router por `prisma.articulo.findMany()`. Verificar que `GET /api/v1/articulos` devuelve los datos del seed.
 
-**Actividad 4 — Capa de servicios (45 min)**
-Refactorizar las llamadas HTTP en módulos `productosService.ts` y `usuariosService.ts`. Asegurar que los tipos se exporten y usen en los componentes.
-
----
-
-## 🛠 Proyecto CMS — Semana 7: Añadir PostgreSQL al servidor Express
-
-El servidor Express lleva dos semanas corriendo y devolviendo el array `ARTICULOS_MOCK` en memoria. Esta semana ese array desaparece: las mismas rutas (`GET /api/articulos`, `GET /api/articulos/:slug`) empiezan a leer de PostgreSQL. El frontend no cambia ni una línea — el servicio y TanStack Query ya están configurados desde S6.
-
-### Paso 1 — Instalar `pg` y crear el pool de conexión
-
-```bash
-cd api
-npm install pg dotenv
-npm install -D @types/pg
-```
-
-```typescript
-// api/src/db/pool.ts
-import { Pool } from "pg";
-import "dotenv/config";
-
-export const pool = new Pool({
-  host:     process.env.DB_HOST     ?? "localhost",
-  port:     Number(process.env.DB_PORT ?? 5432),
-  database: process.env.DB_NAME     ?? "cms_blog",
-  user:     process.env.DB_USER     ?? "postgres",
-  password: process.env.DB_PASSWORD,
-});
-
-// Verificar la conexión al arrancar
-pool.connect()
-  .then(() => console.log("✅ PostgreSQL conectado"))
-  .catch((e) => console.error("❌ Error al conectar a PostgreSQL:", e));
-```
-
-### Paso 2 — Crear el esquema de base de datos
-
-```sql
--- api/src/db/schema.sql  (ejecútalo en DBeaver o psql)
-CREATE TABLE categorias (
-  id     SERIAL PRIMARY KEY,
-  nombre VARCHAR(100) NOT NULL,
-  slug   VARCHAR(100) UNIQUE NOT NULL,
-  color  VARCHAR(7) DEFAULT '#3b82f6'
-);
-
-CREATE TYPE estado_articulo AS ENUM ('borrador', 'publicado', 'archivado');
-
-CREATE TABLE articulos (
-  id               SERIAL PRIMARY KEY,
-  titulo           VARCHAR(255) NOT NULL,
-  slug             VARCHAR(255) UNIQUE NOT NULL,
-  extracto         TEXT,
-  contenido        TEXT,
-  imagen           VARCHAR(500),
-  categoria_id     INT REFERENCES categorias(id),
-  autor            VARCHAR(100) DEFAULT 'Administrador',
-  tiempo_lectura   INT          DEFAULT 5,
-  estado           estado_articulo DEFAULT 'borrador',
-  fecha_publicacion TIMESTAMPTZ,
-  created_at       TIMESTAMPTZ  DEFAULT NOW(),
-  updated_at       TIMESTAMPTZ  DEFAULT NOW()
-);
-
--- Datos de prueba
-INSERT INTO categorias (nombre, slug, color) VALUES
-  ('Programación', 'programacion', '#3b82f6'),
-  ('Diseño',       'diseno',       '#8b5cf6');
-```
-
-### Paso 3 — Reemplazar el mock en las rutas de artículos
-
-```typescript
-// api/src/routes/articulos.ts — ARTICULOS_MOCK reemplazado por pool.query
-import { Router } from "express";
-import { pool } from "../db/pool";
-
-const router = Router();
-
-router.get("/", async (req, res, next) => {
-  try {
-    const { estado, busqueda } = req.query;
-    let query = `
-      SELECT a.*, c.nombre AS categoria_nombre, c.slug AS categoria_slug, c.color AS categoria_color
-      FROM articulos a
-      JOIN categorias c ON a.categoria_id = c.id
-      WHERE 1=1
-    `;
-    const params: unknown[] = [];
-
-    if (estado && estado !== "todos") {
-      params.push(estado);
-      query += ` AND a.estado = $${params.length}`;
-    }
-    if (busqueda && typeof busqueda === "string") {
-      params.push(`%${busqueda}%`);
-      query += ` AND a.titulo ILIKE $${params.length}`;
-    }
-    query += " ORDER BY a.created_at DESC";
-
-    const { rows } = await pool.query(query, params);
-    res.json({ data: rows, status: 200 });
-  } catch (e) { next(e); }
-});
-
-router.get("/:slug", async (req, res, next) => {
-  try {
-    const { rows } = await pool.query(
-      `SELECT a.*, c.nombre AS categoria_nombre
-       FROM articulos a JOIN categorias c ON a.categoria_id = c.id
-       WHERE a.slug = $1`,
-      [req.params.slug]
-    );
-    if (!rows.length) return res.status(404).json({ error: "No encontrado" });
-    res.json({ data: rows[0], status: 200 });
-  } catch (e) { next(e); }
-});
-
-export default router;
-```
-
-### Paso 4 — Variables de entorno del backend
-
-```env
-# api/.env  (nunca subir a git — añadir a .gitignore)
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=cms_blog
-DB_USER=postgres
-DB_PASSWORD=tu_contraseña
-PORT=3001
-FRONTEND_URL=http://localhost:5173
-```
-
-> **El frontend no cambia esta semana.** El servicio `articulosService` y los hooks TanStack Query del frontend siguen funcionando igual — la URL de la API no cambió. Solo cambió lo que pasa dentro del servidor cuando recibe la petición.
-
-> **Para la próxima semana (Semana 8)**: El backend ya lee desde PostgreSQL pero solo tiene rutas `GET`. En la Semana 8 añadirás `POST`, `PUT` y `DELETE` al servidor Express, implementarás el handler de subida de archivos con `multer` y completarás la arquitectura MVC (controllers/models/routes separados). La Semana 9 cerrará el ciclo conectando esas rutas desde el panel admin del frontend.
+**Actividad 4 — Verificar end-to-end (30 min)**
+Con el backend conectado a PostgreSQL y el frontend corriendo, confirma que la `HomePage` muestra los artículos del seed. Añade un artículo directamente en Prisma Studio y verifica que aparece en el frontend al recargar.
 
 ---
 
-## 📋 Entregable de la semana
+## 🛠 Proyecto CMS — Semana 7: Backend conectado a PostgreSQL
 
-Para considerar completada la Semana 7, el backend debe funcionar con PostgreSQL real:
+Al terminar esta semana:
 
-- [ ] **PostgreSQL conectado**: `npm run dev` en `api/` arranca y muestra `✅ PostgreSQL conectado` en consola. Sin errores de conexión.
-- [ ] **Schema ejecutado**: Las tablas `categorias` y `articulos` existen en la base de datos con al menos 2 artículos de prueba insertados.
-- [ ] **`GET /api/articulos` desde DB**: El endpoint devuelve los artículos de PostgreSQL — no el array `ARTICULOS_MOCK`. Verificable con `curl` o el devtools del navegador.
-- [ ] **Filtros funcionando**: `GET /api/articulos?estado=publicado` devuelve solo artículos publicados. `GET /api/articulos?busqueda=css` devuelve artículos cuyo título contiene "css".
-- [ ] **Página pública actualizada**: La `HomePage` del frontend muestra los artículos de la base de datos sin cambiar ningún archivo del frontend.
-- [ ] **Variables de entorno**: `api/.env` tiene las credenciales de BD. El archivo está en `.gitignore`.
+1. El backend usa Prisma 7 para leer artículos de PostgreSQL
+2. El frontend usa `articulosService` (no TanStack Query, no Axios) para consumir la API
+3. `npm run dev` desde la raíz levanta ambos procesos — frontend en 5173, backend en 3001
+4. `npx prisma studio` desde `backend/` permite ver y editar los datos directamente
+
+### 📁 Archivos de esta semana
+
+```
+backend/
+├── prisma.config.ts              ← NUEVO: configuración Prisma 7 (apunta al schema)
+├── prisma/                       ← carpeta NUEVA esta semana
+│   ├── schema.prisma             ← NUEVO: modelos Articulo y Categoria
+│   ├── seed.ts                   ← NUEVO: datos iniciales de prueba
+│   └── migrations/               ← GENERADO automáticamente por `npx prisma migrate dev`
+│       └── 20xxxxxx_init/
+└── src/
+    ├── config/                   ← carpeta NUEVA esta semana
+    │   └── db.ts                 ← NUEVO: cliente Prisma con PrismaPg adapter
+    ├── generated/                ← GENERADO por `npx prisma generate`
+    │   └── prisma/               ← cliente TypeScript tipado, NO editar a mano
+    └── routes/
+        └── articulos.ts          ← ACTUALIZADO: mock → prisma.articulo.findMany()
+```
+
+> **Prisma 7 — dónde van los archivos:**
+> - `DATABASE_URL` → en `backend/.env`, **NO en `schema.prisma`**
+> - `prisma.config.ts` → en la raíz de `backend/`, no dentro de `src/`
+> - Cliente generado → en `src/generated/prisma/` (no en `node_modules/`)
+> - Import del cliente → `import { PrismaClient } from '../generated/prisma/client'`
+
+> **En la Semana 8** añadirás los endpoints de escritura (POST, PUT, DELETE) y la arquitectura MVC completa con controllers, services y la capa de queries Prisma.
+

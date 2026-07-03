@@ -1,34 +1,96 @@
 ---
 titulo: "Panel admin CRUD conectado a la API"
-descripcion: "useMutation de TanStack Query, formularios wired a la API real, subida de imágenes desde el navegador y sincronización del estado global."
+descripcion: "Formularios conectados a la API real, subida de imágenes con FormData, confirmaciones con SweetAlert2 y sincronización del store Zustand."
 duracion: "8h"
 semana: 9
 objetivos:
-  - "Usar useMutation de TanStack Query para operaciones de escritura tipadas"
-  - "Conectar los formularios de creación y edición al backend real"
-  - "Implementar subida de imágenes desde el navegador con FormData"
-  - "Sincronizar el store de Zustand con los cambios de la API"
-  - "Manejar preview de imagen antes de subir y fallback para imágenes rotas"
+  - "Completar articulosService con los métodos de escritura (crear, actualizar, eliminar, upload)"
+  - "Conectar NuevoArticulo y EditarArticulo a la API real usando el servicio y useFormularioArticulo"
+  - "Subir imágenes con FormData desde el navegador al endpoint /upload"
+  - "Confirmar acciones destructivas con SweetAlert2 antes de llamar a la API"
+  - "Implementar actualización optimista en el store Zustand para el toggle de estado"
 recursos:
-  - nombre: "TanStack Query - useMutation"
-    url: "https://tanstack.com/query/latest/docs/framework/react/guides/mutations"
+  - nombre: "SweetAlert2 - Documentación"
+    url: "https://sweetalert2.github.io/"
   - nombre: "MDN - FormData"
     url: "https://developer.mozilla.org/en-US/docs/Web/API/FormData"
 ---
 
 > **🎯 Objetivo de la semana:** Al terminar el panel admin del CMS funcionará en su totalidad: crear artículos con imagen, editar cualquier campo incluyendo la foto, eliminar con confirmación y ver la lista actualizada al instante sin recargar la página.
 >
-> **🔑 Concepto clave:** `useMutation` + invalidación de caché — la diferencia entre `useQuery` (leer) y `useMutation` (escribir) en TanStack Query. Cuando una mutación termina con éxito, `queryClient.invalidateQueries()` marca el caché de lectura como obsoleto y React vuelve a pedir los datos frescos sin que el usuario note nada.
+> **🔑 Concepto clave:** Service + Zustand como canal de comunicación — el patrón del proyecto es: llamar al servicio (que llama a `fetch`) y luego actualizar el store Zustand localmente. Sin TanStack Query, sin invalidación de caché — el store es la fuente de verdad del panel admin.
 >
-> **🛠 Tarea práctica:** Conectar `NuevoArticulo`, `EditarArticulo` y el botón de eliminar de `ArticulosAdmin` a la API real. Añadir subida de imagen con preview en ambos formularios.
+> **🛠 Tarea práctica:** Conectar `NuevoArticulo`, `EditarArticulo` y el botón de eliminar de `AdminListado` a la API real. Añadir confirmación con SweetAlert2 antes de eliminar. Implementar el toggle de estado con actualización optimista.
 >
-> **📋 Entregable:** Desde el panel admin puedes crear un artículo con imagen, editarlo cambiando cualquier campo o la foto, y eliminarlo. La tabla se actualiza en tiempo real después de cada operación sin recargar la página.
+> **📋 Entregable:** Desde el panel admin puedes crear un artículo con imagen, editarlo, cambiar su estado y eliminarlo con confirmación. El store Zustand se actualiza localmente sin recargar la página. TanStack Query, useMutation y queryClient no se usan en este proyecto.
 
 ---
 
+### 📁 Archivos de esta semana
+
+```
+frontend/src/
+├── services/
+│   └── articulosService.ts             ← ACTUALIZADO: + crear, actualizar, eliminar, upload
+├── store/
+│   └── articulosStore.ts               ← ACTUALIZADO: toggleEstado con optimismo
+├── hooks/
+│   └── useFormularioArticulo.ts        (semana 3 — se reutiliza sin cambios)
+└── pages/
+    └── admin/
+        ├── NuevoArticulo.tsx           ← ACTUALIZADO: conectado a la API real
+        └── EditarArticulo.tsx          ← ACTUALIZADO: carga + edita vía articulosService
+```
+
+> **Flujo de creación de artículo:**
+> 1. `articulosService.upload(file)` → `POST /api/v1/upload` → devuelve `filename`
+> 2. `articulosService.crear({ ...campos, imagen: filename })` → `POST /api/v1/articulos`
+> 3. `await cargarArticulos()` → refresca el store con `noCache: true`
+> 4. `navigate('/admin')`
+>
+> **Regla de imágenes:** Usa siempre `articulosService.resolverImagen(imagen)` para construir la URL. Añade siempre `onError` con `e.currentTarget.onerror = null` para evitar loops infinitos.
+
 ## 1. La capa de servicios completa
 
-El `articulosService` que creaste en S6 solo tenía métodos de lectura. Esta semana lo completas con los métodos de escritura. El patrón es el mismo — una función `fetchJSON` genérica — pero con `method: "POST"` o `"PUT"` y el body serializado como JSON. El método `upload` es diferente: usa `FormData` (no JSON) porque el backend espera `multipart/form-data`:
+El `articulosService` que creaste en S6 solo tenía métodos de lectura. Esta semana lo completas con los métodos de escritura. El patrón es el mismo — el helper `fetchJSON<T>` genérico — pero con `method: 'POST'` o `'PUT'` y el body serializado como JSON. El método `upload` es diferente: usa `FormData` (no JSON) porque el backend espera `multipart/form-data`:
+
+```typescript
+// src/services/articulosService.ts — métodos de escritura añadidos
+
+// ── Escritura ———————————————————————————————————————————————
+// Se añaden al objeto articulosService ya existente
+create: (datos: NuevoArticuloInput) =>
+  fetchJSON<ApiResponse<Articulo>>('/articulos', {
+    method: 'POST',
+    body: JSON.stringify(datos),
+  }),
+
+actualizar: (slug: string, cambios: ActualizarArticuloInput) =>
+  fetchJSON<ApiResponse<Articulo>>(`/articulos/${slug}`, {
+    method: 'PUT',
+    body: JSON.stringify(cambios),
+  }),
+
+eliminar: (id: number) =>
+  fetch(`${BASE}/articulos/${id}`, { method: 'DELETE' }).then((res) => {
+    if (!res.ok && res.status !== 204) throw new Error(`HTTP ${res.status}`)
+  }),
+
+// Upload de imagen — FormData, no JSON
+upload: async (file: File): Promise<string> => {
+  const form = new FormData()
+  form.append('imagen', file)
+  // ⚠️ NO pongas Content-Type manual — el browser añade el boundary automáticamente
+  const res = await fetch(`${BASE}/upload`, { method: 'POST', body: form })
+  if (!res.ok) throw new Error('Error al subir la imagen')
+  const json = await res.json() as ApiResponse<{ filename: string }>
+  return json.data.filename
+},
+```
+
+**¿Por qué `upload` devuelve solo el `filename` y no la URL completa?** Para desacoplar el frontend del backend. Si mañana las imágenes se mueven a S3, solo cambia `resolverImagen` — el resto del código no sabe dónde están guardadas.
+
+**El típico error con `Content-Type` en FormData:** si pones `headers: { 'Content-Type': 'multipart/form-data' }` manualmente, el navegador no incluye el `boundary` necesario en el header y el servidor falla al parsear. Nunca lo pongas — deja que el navegador lo calcule.
 
 ```typescript
 // src/services/articulosService.ts — versión completa
@@ -99,117 +161,115 @@ export const articulosService = {
 
 ---
 
-## 2. useMutation con TypeScript
+## 2. Confirmar eliminación con SweetAlert2
 
-`useQuery` es para leer — el hook se suscribe a una clave y React Query gestiona el caché. `useMutation` es para escribir — no tiene caché propio, se dispara manualmente con `mutate(datos)` y reporta el estado de la operación con `isPending`, `isError` e `isSuccess`:
+Antes de llamar a `articulosService.eliminar()`, es buena práctica pedir confirmación al usuario. `SweetAlert2` proporciona un modal accesible y estilizable sin necesidad de construirlo desde cero:
 
-```typescript
-// Los tipos viajan: mutationFn devuelve T, mutate recibe V
-function useMutation<TData, TError, TVariables>(options: {
-  mutationFn: (variables: TVariables) => Promise<TData>;
-  onSuccess?: (data: TData, variables: TVariables) => void;
-  onError?: (error: TError, variables: TVariables) => void;
-}): {
-  mutate: (variables: TVariables) => void;
-  mutateAsync: (variables: TVariables) => Promise<TData>;
-  isPending: boolean;
-  isError: boolean;
-  error: TError | null;
-};
+```bash
+npm install sweetalert2
 ```
 
-En la práctica para el CMS:
+```tsx
+// En AdminListado.tsx — botón de eliminar con confirmación
+import Swal from 'sweetalert2'
+import { articulosService } from '@/services/articulosService'
+import { useArticulosStore } from '@/store/articulosStore'
 
-```typescript
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { articulosService } from "@/services/articulosService";
-import type { NuevoArticulo } from "@/types";
+function BotonEliminar({ id, titulo }: { id: number; titulo: string }) {
+  const eliminarArticulo = useArticulosStore((s) => s.eliminarArticulo)
 
-function useCrearArticulo() {
-  const queryClient = useQueryClient();
+  async function handleEliminar() {
+    const resultado = await Swal.fire({
+      title: '¿Eliminar publicación?',
+      text: `"${titulo}" se eliminará permanentemente.`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#ef4444',
+      cancelButtonText: 'Cancelar',
+      confirmButtonText: 'Sí, eliminar',
+    })
 
-  return useMutation({
-    mutationFn: (datos: NuevoArticulo) => articulosService.crear(datos),
-    onSuccess: () => {
-      // Invalida el caché de la lista — al volver a /admin los datos están frescos
-      queryClient.invalidateQueries({ queryKey: ["articulos"] });
-    },
-    onError: (error: Error) => {
-      console.error("Error al crear:", error.message);
-    },
-  });
+    if (!resultado.isConfirmed) return
+
+    try {
+      await articulosService.eliminar(id)
+      // Actualización local — sin ir al servidor de nuevo
+      eliminarArticulo(id)
+    } catch (err) {
+      Swal.fire('Error', 'No se pudo eliminar el artículo.', 'error')
+    }
+  }
+
+  return (
+    <button onClick={handleEliminar} className="btn-action btn-action--delete" title="Eliminar">
+      <i className="bi bi-trash" />
+    </button>
+  )
 }
 ```
 
-La diferencia entre `mutate` y `mutateAsync`:
-- `mutate(datos)` — dispara la mutación sin bloquear; los callbacks `onSuccess`/`onError` se ejecutan cuando termina.
-- `mutateAsync(datos)` — devuelve una `Promise` que puedes `await` directamente, útil cuando necesitas hacer algo después (como `navigate`).
+El flujo tiene dos pasos separados intencionales: primero `articulosService.eliminar(id)` hace el DELETE real en la API, y solo si tiene éxito `eliminarArticulo(id)` actualiza el store local. Si el DELETE falla, el store no cambia y el artículo sigue visible.
 
 ---
 
 ## 3. Formulario NuevoArticulo conectado a la API
 
+El hook `useFormularioArticulo` que creaste en S3 gestiona el estado de los campos. Esta semana solo añades la lógica de upload y la llamada a la API:
+
 ```tsx
 // src/pages/admin/NuevoArticulo.tsx
-import { useState, type FormEvent, type ChangeEvent } from "react";
-import { useNavigate } from "react-router-dom";
-import { articulosService } from "@/services/articulosService";
-import { useArticulosStore } from "@/store/articulosStore";
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { articulosService } from '@/services/articulosService'
+import { useFormularioArticulo } from '@/hooks/useFormularioArticulo'
+import { useArticulosStore } from '@/store/articulosStore'
 
 export function NuevoArticulo() {
-  const navigate = useNavigate();
-  const cargarArticulos = useArticulosStore((s) => s.cargarArticulos);
+  const navigate = useNavigate()
+  const cargarArticulos = useArticulosStore((s) => s.cargarArticulos)
+  const { campos, setCampo, reset, esValido } = useFormularioArticulo()
 
-  // Estado del formulario
-  const [titulo, setTitulo] = useState("");
-  const [extracto, setExtracto] = useState("");
-  const [contenido, setContenido] = useState("");
-  const [categoriaId, setCategoriaId] = useState<number>(1);
-  const [estado, setEstado] = useState<"borrador" | "publicado">("borrador");
+  const [imagenFile, setImagenFile] = useState<File | null>(null)
+  const [preview, setPreview] = useState<string | null>(null)
+  const [enviando, setEnviando] = useState(false)
+  const [errorApi, setErrorApi] = useState<string | null>(null)
 
-  // Estado de imagen
-  const [imagenFile, setImagenFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
-
-  // Estado de la operación
-  const [enviando, setEnviando] = useState(false);
-  const [errorApi, setErrorApi] = useState<string | null>(null);
-
-  function handleImagenChange(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0] ?? null;
-    setImagenFile(file);
+  function handleImagenChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] ?? null
+    setImagenFile(file)
     // Preview inmediato con URL local — sin esperar al servidor
-    setPreview(file ? URL.createObjectURL(file) : null);
+    setPreview(file ? URL.createObjectURL(file) : null)
   }
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    setEnviando(true);
-    setErrorApi(null);
+  async function handleSubmit(e: React.BaseSyntheticEvent) {
+    e.preventDefault()
+    if (!esValido) return
+    setEnviando(true)
+    setErrorApi(null)
 
     try {
-      // Paso 1: subir la imagen si hay una seleccionada
-      let imagenNombre: string | undefined;
+      // Paso 1: subir imagen si hay archivo seleccionado
+      let imagen: string | undefined
       if (imagenFile) {
-        imagenNombre = await articulosService.upload(imagenFile);
+        imagen = await articulosService.upload(imagenFile)
       }
 
-      // Paso 2: crear el artículo con el nombre del archivo (no la URL)
+      // Paso 2: crear el artículo con el filename (no la URL completa)
       await articulosService.crear({
-        titulo,
-        extracto,
-        contenido,
-        imagen: imagenNombre,
-        categoria_id: categoriaId,
-        estado,
-      });
+        titulo:      campos.titulo,
+        extracto:    campos.extracto,
+        contenido:   campos.contenido,
+        imagen,
+        categoriaId: 1, // en S10 esto vendrá de un select cargado desde la API
+      })
 
-      // Paso 3: refrescar el store ANTES de navegar para evitar datos stale
-      await cargarArticulos();
-      navigate("/admin");
+      // Paso 3: refrescar el store con noCache=true ANTES de navegar
+      await cargarArticulos()
+      reset()
+      navigate('/admin')
     } catch (err) {
-      setErrorApi(err instanceof Error ? err.message : "Error desconocido");
-      setEnviando(false);
+      setErrorApi(err instanceof Error ? err.message : 'Error desconocido')
+      setEnviando(false)
     }
   }
 
@@ -219,382 +279,188 @@ export function NuevoArticulo() {
       {errorApi && <div className="error-banner">{errorApi}</div>}
       <form onSubmit={handleSubmit} className="article-form">
         <div className="form-group">
-          <label>Imagen</label>
-          {/* Preview: muestra la imagen seleccionada o el placeholder */}
           <img
-            src={preview ?? "/assets/img/default-cover.svg"}
+            src={preview ?? articulosService.resolverImagen(null)}
             alt="Preview"
             className="image-preview"
-            onError={(e) => { e.currentTarget.src = "/assets/img/default-cover.svg"; }}
+            onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = '/uploads/default-cover.svg' }}
           />
           <input type="file" accept="image/*" onChange={handleImagenChange} />
         </div>
-
-        <div className="form-group">
-          <label>Título *</label>
-          <input
-            type="text"
-            value={titulo}
-            onChange={(e) => setTitulo(e.target.value)}
-            required
-          />
-        </div>
-
-        <div className="form-group">
-          <label>Extracto</label>
-          <textarea
-            value={extracto}
-            onChange={(e) => setExtracto(e.target.value)}
-            rows={3}
-          />
-        </div>
-
-        <div className="form-group">
-          <label>Contenido</label>
-          <textarea
-            value={contenido}
-            onChange={(e) => setContenido(e.target.value)}
-            rows={10}
-          />
-        </div>
-
-        <div className="form-row">
-          <div className="form-group">
-            <label>Estado</label>
-            <select
-              value={estado}
-              onChange={(e) => setEstado(e.target.value as "borrador" | "publicado")}
-            >
-              <option value="borrador">Borrador</option>
-              <option value="publicado">Publicado</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="form-actions">
-          <button type="button" onClick={() => navigate("/admin")}>
-            Cancelar
-          </button>
-          <button type="submit" disabled={enviando}>
-            {enviando ? "Guardando..." : "Crear artículo"}
-          </button>
-        </div>
+        <input
+          value={campos.titulo}
+          onChange={(e) => setCampo('titulo', e.target.value)}
+          placeholder="Título *"
+          required
+        />
+        <textarea
+          value={campos.extracto}
+          onChange={(e) => setCampo('extracto', e.target.value)}
+          placeholder="Extracto"
+          rows={3}
+        />
+        <button type="submit" disabled={!esValido || enviando}>
+          {enviando ? 'Guardando...' : 'Guardar artículo'}
+        </button>
       </form>
     </main>
-  );
+  )
 }
 ```
 
 ---
 
-## 4. Formulario EditarArticulo con useMutation
+## 4. Toggle de estado con actualización optimista
 
-El formulario de edición tiene un paso adicional: primero hay que cargar el artículo actual con `useQuery` para rellenar los campos. `useMutation` se encarga de enviar los cambios:
+El toggle de publicado/borrador debe sentirse instantáneo. El patrón de **actualización optimista** cambia la UI inmediatamente sin esperar al servidor — si la petición falla, revierte el cambio:
+
+```typescript
+// En articulosStore.ts — toggleEstado con optimismo
+toggleEstado: async (id) => {
+  const articulo = get().articulos.find((a) => a.id === id)
+  if (!articulo) return
+
+  const nuevoEstado = articulo.estado === 'publicado' ? 'borrador' : 'publicado'
+
+  // 1. Cambiar la UI inmediatamente
+  set((state) => ({
+    articulos: state.articulos.map((a) =>
+      a.id === id ? { ...a, estado: nuevoEstado } : a
+    )
+  }))
+
+  try {
+    // 2. Confirmar con el servidor
+    await articulosService.actualizar(articulo.slug, { estado: nuevoEstado })
+  } catch {
+    // 3. Si falla, revertir al estado original
+    set((state) => ({
+      articulos: state.articulos.map((a) =>
+        a.id === id ? { ...a, estado: articulo.estado } : a
+      )
+    }))
+  }
+},
+
+---
+
+## 5. Formulario EditarArticulo conectado a la API
+
+El formulario de edición carga primero los datos actuales del artículo y luego envía solo los cambios. A diferencia de `NuevoArticulo`, si el usuario no selecciona una imagen nueva, la actual se conserva:
 
 ```tsx
 // src/pages/admin/EditarArticulo.tsx
-import { useState, type ChangeEvent } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { articulosService } from "@/services/articulosService";
-import { useArticulosStore } from "@/store/articulosStore";
+import { useState, useEffect } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
+import { articulosService } from '@/services/articulosService'
+import { useArticulosStore } from '@/store/articulosStore'
+import type { Articulo, EstadoArticulo } from '@/types'
 
 export function EditarArticulo() {
-  const { slug } = useParams<{ slug: string }>();
-  const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const cargarArticulos = useArticulosStore((s) => s.cargarArticulos);
+  const { slug } = useParams<{ slug: string }>()
+  const navigate = useNavigate()
+  const cargarArticulos = useArticulosStore((s) => s.cargarArticulos)
+
+  const [articulo, setArticulo] = useState<Articulo | null>(null)
+  const [titulo, setTitulo] = useState('')
+  const [extracto, setExtracto] = useState('')
+  const [estado, setEstado] = useState<EstadoArticulo>('borrador')
+  const [imagenFile, setImagenFile] = useState<File | null>(null)
+  const [preview, setPreview] = useState<string | null>(null)
+  const [enviando, setEnviando] = useState(false)
+  const [errorApi, setErrorApi] = useState<string | null>(null)
 
   // Cargar datos actuales del artículo
-  const { data, isLoading } = useQuery({
-    queryKey: ["articulo", slug],
-    queryFn: () => articulosService.getBySlug(slug!),
-    enabled: !!slug,
-  });
-  const articulo = data?.data;
+  useEffect(() => {
+    if (!slug) return
+    articulosService.getBySlug(slug)
+      .then((res) => {
+        const a = res.data
+        setArticulo(a)
+        setTitulo(a.titulo)
+        setExtracto(a.extracto ?? '')
+        setEstado(a.estado)
+      })
+      .catch(() => navigate('/admin'))
+  }, [slug])
 
-  // Estado local del formulario (se inicializa cuando llegan los datos)
-  const [titulo, setTitulo] = useState("");
-  const [extracto, setExtracto] = useState("");
-  const [contenido, setContenido] = useState("");
-  const [estado, setEstado] = useState<"borrador" | "publicado" | "archivado">("borrador");
-  const [imagenFile, setImagenFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
-  const [errorApi, setErrorApi] = useState<string | null>(null);
+  async function handleSubmit(e: React.BaseSyntheticEvent) {
+    e.preventDefault()
+    if (!slug) return
+    setEnviando(true)
+    setErrorApi(null)
 
-  // Inicializar el formulario cuando llegan los datos
-  // (useEffect solo corre cuando articulo cambia de undefined a un objeto)
-  const [inicializado, setInicializado] = useState(false);
-  if (articulo && !inicializado) {
-    setTitulo(articulo.titulo);
-    setExtracto(articulo.extracto ?? "");
-    setContenido(articulo.contenido ?? "");
-    setEstado(articulo.estado);
-    setInicializado(true);
-  }
-
-  function handleImagenChange(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0] ?? null;
-    setImagenFile(file);
-    setPreview(file ? URL.createObjectURL(file) : null);
-  }
-
-  const mutation = useMutation({
-    mutationFn: async () => {
+    try {
       // Subir nueva imagen solo si el usuario seleccionó una
-      let imagenNombre: string | undefined;
-      if (imagenFile) {
-        imagenNombre = await articulosService.upload(imagenFile);
-      }
+      let imagen: string | undefined
+      if (imagenFile) imagen = await articulosService.upload(imagenFile)
 
-      return articulosService.actualizar(slug!, {
-        titulo,
-        extracto,
-        contenido,
-        estado,
+      await articulosService.actualizar(slug, {
+        titulo, extracto, estado,
         // Solo incluir imagen si se subió una nueva — el backend preserva la existente
-        ...(imagenNombre ? { imagen: imagenNombre } : {}),
-      });
-    },
-    onSuccess: async () => {
-      // Invalida el caché del detalle y la lista
-      queryClient.invalidateQueries({ queryKey: ["articulo", slug] });
-      // Refrescar el store de Zustand ANTES de navegar
-      await cargarArticulos();
-      navigate("/admin");
-    },
-    onError: (err: Error) => {
-      setErrorApi(err.message);
-    },
-  });
+        ...(imagen ? { imagen } : {}),
+      })
 
-  if (isLoading) return <div className="loading">Cargando artículo...</div>;
-  if (!articulo) return <div className="error">Artículo no encontrado</div>;
+      await cargarArticulos()
+      navigate('/admin')
+    } catch (err) {
+      setErrorApi(err instanceof Error ? err.message : 'Error desconocido')
+      setEnviando(false)
+    }
+  }
 
-  // La imagen a mostrar: preview nuevo > imagen actual del artículo > default
-  const imagenMostrada = preview
-    ?? articulosService.resolverImagen(articulo.imagen);
+  if (!articulo) return <div className="loading">Cargando...</div>
 
   return (
     <main className="admin-page">
       <h1>Editar: {articulo.titulo}</h1>
       {errorApi && <div className="error-banner">{errorApi}</div>}
-      <form
-        onSubmit={(e) => { e.preventDefault(); mutation.mutate(); }}
-        className="article-form"
-      >
-        <div className="form-group">
-          <label>Imagen</label>
-          <img
-            src={imagenMostrada}
-            alt="Preview"
-            className="image-preview"
-            onError={(e) => { e.currentTarget.src = "/assets/img/default-cover.svg"; }}
-          />
-          <input type="file" accept="image/*" onChange={handleImagenChange} />
-          <small>Selecciona una imagen solo si quieres cambiar la actual</small>
-        </div>
-
-        <div className="form-group">
-          <label>Título *</label>
-          <input
-            type="text"
-            value={titulo}
-            onChange={(e) => setTitulo(e.target.value)}
-            required
-          />
-        </div>
-
-        <div className="form-group">
-          <label>Extracto</label>
-          <textarea value={extracto} onChange={(e) => setExtracto(e.target.value)} rows={3} />
-        </div>
-
-        <div className="form-group">
-          <label>Contenido</label>
-          <textarea value={contenido} onChange={(e) => setContenido(e.target.value)} rows={10} />
-        </div>
-
-        <div className="form-group">
-          <label>Estado</label>
-          <select value={estado} onChange={(e) => setEstado(e.target.value as typeof estado)}>
-            <option value="borrador">Borrador</option>
-            <option value="publicado">Publicado</option>
-            <option value="archivado">Archivado</option>
-          </select>
-        </div>
-
-        <div className="form-actions">
-          <button type="button" onClick={() => navigate("/admin")}>Cancelar</button>
-          <button type="submit" disabled={mutation.isPending}>
-            {mutation.isPending ? "Guardando..." : "Guardar cambios"}
-          </button>
-        </div>
+      <form onSubmit={handleSubmit}>
+        <img
+          src={preview ?? articulosService.resolverImagen(articulo.imagen)}
+          alt="Preview"
+          className="image-preview"
+          onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = '/uploads/default-cover.svg' }}
+        />
+        <input type="file" accept="image/*"
+          onChange={(e) => {
+            const f = e.target.files?.[0] ?? null
+            setImagenFile(f)
+            setPreview(f ? URL.createObjectURL(f) : null)
+          }}
+        />
+        <input value={titulo} onChange={(e) => setTitulo(e.target.value)} required />
+        <textarea value={extracto} onChange={(e) => setExtracto(e.target.value)} rows={3} />
+        <select value={estado} onChange={(e) => setEstado(e.target.value as EstadoArticulo)}>
+          <option value="borrador">Borrador</option>
+          <option value="publicado">Publicado</option>
+        </select>
+        <button type="submit" disabled={enviando}>
+          {enviando ? 'Guardando...' : 'Guardar cambios'}
+        </button>
       </form>
     </main>
-  );
+  )
 }
 ```
 
----
-
-## 5. Eliminar artículos con confirmación
-
-```tsx
-// src/pages/admin/ArticulosAdmin.tsx — fragmento del handleEliminar
-import { articulosService } from "@/services/articulosService";
-import { useArticulosStore } from "@/store/articulosStore";
-import Swal from "sweetalert2";
-
-// En el componente:
-const { articulos, cargarArticulos, eliminarArticulo } = useArticulosStore();
-
-async function handleEliminar(id: number, titulo: string) {
-  const confirmado = await Swal.fire({
-    title: "¿Eliminar artículo?",
-    text: `"${titulo}" se eliminará permanentemente.`,
-    icon: "warning",
-    showCancelButton: true,
-    confirmButtonColor: "#ef4444",
-    confirmButtonText: "Sí, eliminar",
-    cancelButtonText: "Cancelar",
-  });
-
-  if (!confirmado.isConfirmed) return;
-
-  try {
-    await articulosService.eliminar(id);
-    // Actualizar el store local sin ir al servidor
-    eliminarArticulo(id);
-    Swal.fire({ title: "Eliminado", icon: "success", timer: 1500, showConfirmButton: false });
-  } catch (err) {
-    Swal.fire({ title: "Error", text: "No se pudo eliminar el artículo.", icon: "error" });
-  }
-}
-```
-
-La diferencia con crear/editar: al eliminar no es necesario llamar a `cargarArticulos()` porque el store de Zustand ya tiene el método `eliminarArticulo(id)` que filtra el artículo localmente — es una actualización optimista que no requiere un round-trip al servidor.
-
----
-
-## 6. Sincronización del store de Zustand
-
-El store de Zustand gestiona la lista del panel admin. Para evitar que se muestren datos obsoletos después de crear o editar, hay que resincronizarlo con la API:
-
-```typescript
-// src/store/articulosStore.ts
-import { create } from "zustand";
-import { articulosService } from "@/services/articulosService";
-import type { Articulo } from "@/types";
-
-interface ArticulosStore {
-  articulos: Articulo[];
-  cargando: boolean;
-  error: string | null;
-  cargarArticulos: () => Promise<void>;
-  eliminarArticulo: (id: number) => void;
-}
-
-export const useArticulosStore = create<ArticulosStore>((set) => ({
-  articulos: [],
-  cargando: false,
-  error: null,
-
-  cargarArticulos: async () => {
-    // Limpiar lista al inicio evita que se vean datos stale durante la carga
-    set({ cargando: true, articulos: [], error: null });
-    try {
-      const res = await articulosService.getAll();
-      set({ articulos: res.data, cargando: false });
-    } catch (err) {
-      set({ error: "Error al cargar artículos", cargando: false });
-    }
-  },
-
-  eliminarArticulo: (id) =>
-    set((state) => ({
-      articulos: state.articulos.filter((a) => a.id !== id),
-    })),
-}));
-```
-
-**El patrón `await cargarArticulos()` antes de `navigate()`**: Si navegas antes de que el store se actualice, el componente `ArticulosAdmin` mostrará la lista antigua mientras `cargarArticulos` corre en segundo plano — el usuario verá brevemente el artículo que acaba de editar con los datos viejos. `await` garantiza que la lista está fresca antes de que React renderice la nueva ruta.
-
----
-
-## 7. Imagen por defecto y fallback
-
-Cuando un artículo no tiene imagen o la URL está rota, hay que mostrar un placeholder en lugar de un `<img>` roto:
-
-```tsx
-// Componente ArticuloCard — fallback en dos niveles
-<img
-  src={articulosService.resolverImagen(articulo.imagen)}
-  alt={articulo.titulo}
-  onError={(e) => {
-    // Si la imagen no carga (URL rota), usa el SVG local
-    e.currentTarget.onerror = null;  // evitar bucle infinito
-    e.currentTarget.src = "/assets/img/default-cover.svg";
-  }}
-/>
-```
-
-El `resolverImagen` es el primer nivel: convierte `null` / `""` en el SVG antes de que el `<img>` lo intente cargar. El `onError` es el segundo nivel: si la imagen existe en la BD pero el archivo ya no está en disco (fue borrado manualmente), el browser muestra el SVG en lugar del ícono roto.
-
-El SVG `default-cover.svg` vive en `public/assets/img/` — no tiene dependencia de npm, siempre está disponible incluso sin conexión al servidor.
+El punto clave de `actualizar`: el objeto enviado no incluye `imagen` si `imagenFile` es null. Eso significa que el campo `imagen` en la base de datos **no se modifica** — se conserva el valor actual. Si el usuario sube una imagen nueva, sí se incluye el nuevo filename.
 
 ---
 
 ## Actividades prácticas
 
 **Actividad 1 — Servicio completo (45 min)**
-Añadir `crear`, `actualizar`, `eliminar` y `upload` al `articulosService`. Probar cada método desde la consola del navegador con `articulosService.crear({...})`.
+Añadir `crear`, `actualizar`, `eliminar` y `upload` al `articulosService`. Probar cada método desde la consola del navegador.
 
-**Actividad 2 — useMutation crear (60 min)**
-Implementar `NuevoArticulo` conectado a la API. Verificar que al guardar el artículo aparece en la tabla del admin sin recargar la página.
+**Actividad 2 — NuevoArticulo con upload (60 min)**
+Implementar `NuevoArticulo` conectado a la API usando `useFormularioArticulo`. Verificar que al guardar el artículo aparece en la tabla del admin sin recargar la página.
 
-**Actividad 3 — useMutation editar con imagen (90 min)**
-Implementar `EditarArticulo`. Probar: (1) editar solo el título sin cambiar imagen, (2) editar cambiando la imagen. Verificar que en ambos casos la imagen correcta aparece en la tabla.
+**Actividad 3 — EditarArticulo (90 min)**
+Implementar `EditarArticulo`. Probar: (1) editar solo el título sin cambiar imagen, (2) editar cambiando la imagen. Verificar que en ambos casos la imagen correcta aparece.
 
-**Actividad 4 — Eliminar con Swal (30 min)**
+**Actividad 4 — Eliminar con SweetAlert2 (30 min)**
 Conectar el botón de eliminar. Verificar que: (1) el modal de confirmación aparece, (2) cancelar no hace nada, (3) confirmar elimina el artículo y actualiza la tabla.
-
----
-
-## 🛠 Proyecto CMS — Semana 9: Panel admin CRUD completo
-
-### Paso 1 — Completar articulosService
-
-Añade los métodos `crear`, `actualizar`, `eliminar` y `upload` al archivo `src/services/articulosService.ts` siguiendo el código de la sección 1. Incluye `resolverImagen`.
-
-### Paso 2 — Actualizar el store de Zustand
-
-Modifica `cargarArticulos()` para que limpie `articulos: []` al inicio (evita datos stale). Añade `eliminarArticulo(id)` si aún no existe.
-
-### Paso 3 — NuevoArticulo conectado a la API
-
-Reemplaza el estado local del formulario por la llamada real a `articulosService.crear()`. Añade la lógica de upload de imagen con preview (`URL.createObjectURL`). El flujo es: upload imagen (si hay) → crear artículo → `await cargarArticulos()` → `navigate("/admin")`.
-
-### Paso 4 — EditarArticulo con useQuery + useMutation
-
-Carga los datos del artículo con `useQuery`. Inicializa el formulario cuando llegan. Implementa `mutation` con `mutationFn` que hace upload (si hay nueva imagen) y luego llama `actualizar`. En `onSuccess`: `invalidateQueries` + `await cargarArticulos()` + `navigate`.
-
-### Paso 5 — Eliminar con confirmación
-
-Instala `sweetalert2` si no está. Conecta el botón de eliminar de `ArticulosAdmin`. Después de confirmar: `await articulosService.eliminar(id)` → `eliminarArticulo(id)` (store local).
-
-### Paso 6 — Imagen por defecto y fallback
-
-Verifica que `ArticuloCard` y las `<img>` de la tabla del admin tienen `onError` con el SVG de fallback. Crea `/public/assets/img/default-cover.svg` si no existe.
-
-### Paso 7 — Prueba del flujo completo
-
-1. Login → panel admin → crear artículo con imagen → verificar en tabla
-2. Editar ese artículo → cambiar solo el extracto (imagen debe mantenerse)
-3. Editar → cambiar la imagen → verificar que la nueva foto aparece
-4. Eliminar → verificar que desaparece de la tabla
-
-> **Para la próxima semana (Semana 10)**: Con el CRUD completo funcionando, en la Semana 10 añadirás tests con Vitest y React Testing Library para garantizar que los componentes y hooks clave del CMS siguen funcionando cuando hagas cambios en el futuro.
 
 ---
 

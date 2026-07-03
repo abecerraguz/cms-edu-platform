@@ -47,9 +47,9 @@
     "slug": "semana-05",
     "numero": 5,
     "titulo": "Gestión de estado global",
-    "descripcion": "useReducer tipado, Redux Toolkit con TypeScript y Zustand como alternativa moderna.",
+    "descripcion": "useReducer tipado, Zustand para estado compartido y arranque del servidor Express base en monorepo.",
     "categoria": "estado",
-    "tecnologias": ["React", "Redux Toolkit", "Zustand", "TypeScript"],
+    "tecnologias": ["React", "Zustand", "TypeScript", "Express", "Node.js"],
     "duracion": "8h",
     "disponible": true,
     "esExamen": false
@@ -68,10 +68,10 @@
   {
     "slug": "semana-07",
     "numero": 7,
-    "titulo": "Consumo de APIs y datos asíncronos",
-    "descripcion": "Fetch y Axios tipados, TanStack Query, manejo de errores y tipado de respuestas de API.",
+    "titulo": "Capa de servicios y conexión a la base de datos",
+    "descripcion": "Capa de servicios con Fetch tipado, introducción a Prisma ORM 7 y primera conexión real a PostgreSQL.",
     "categoria": "apis",
-    "tecnologias": ["Fetch API", "Axios", "TanStack Query", "TypeScript"],
+    "tecnologias": ["Fetch API", "TypeScript", "Prisma", "PostgreSQL"],
     "duracion": "8h",
     "disponible": true,
     "esExamen": false
@@ -79,10 +79,10 @@
   {
     "slug": "semana-08",
     "numero": 8,
-    "titulo": "Backend CRUD completo con Express y multer",
-    "descripcion": "Endpoints POST, PUT y DELETE tipados con Express + PostgreSQL, arquitectura MVC y subida de archivos con multer.",
+    "titulo": "Backend CRUD completo con Express y Prisma",
+    "descripcion": "Endpoints POST, PUT y DELETE tipados con Express + Prisma + PostgreSQL, arquitectura MVC de 4 capas y subida de archivos con multer.",
     "categoria": "backend",
-    "tecnologias": ["Express", "PostgreSQL", "multer", "TypeScript"],
+    "tecnologias": ["Express", "Prisma", "PostgreSQL", "multer", "TypeScript"],
     "duracion": "8h",
     "disponible": true,
     "esExamen": false
@@ -91,9 +91,9 @@
     "slug": "semana-09",
     "numero": 9,
     "titulo": "Panel admin CRUD conectado a la API",
-    "descripcion": "useMutation de TanStack Query, formularios wired a la API real, subida de imágenes desde el navegador y sincronización del estado global.",
+    "descripcion": "Formularios conectados a la API real, subida de imágenes con FormData, confirmaciones con SweetAlert2 y sincronización del store Zustand.",
     "categoria": "fullstack",
-    "tecnologias": ["React", "TanStack Query", "Zustand", "FormData", "TypeScript"],
+    "tecnologias": ["React", "Zustand", "FormData", "SweetAlert2", "TypeScript"],
     "duracion": "8h",
     "disponible": true,
     "esExamen": false

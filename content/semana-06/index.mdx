@@ -196,64 +196,84 @@ Convertir las páginas de admin a imports lazy. Verificar en Network tab que se 
 
 Hasta ahora las páginas existían pero no había forma de navegar entre ellas con URLs reales. Esta semana conectas todo con React Router v6: rutas públicas, parámetros dinámicos y rutas del panel admin protegidas por autenticación.
 
-### Paso 0 — Instalar TanStack Query y conectar al servidor Express
+### 📁 Archivos de esta semana
 
-Antes de configurar las rutas, prepara la capa que comunica el frontend con el servidor Express que levantaste en S5.
+```
+frontend/src/
+├── services/                             ← carpeta NUEVA esta semana
+│   └── articulosService.ts               ← NUEVO: única capa que llama a fetch
+├── components/
+│   └── ProtectedRoute.tsx                ← NUEVO: ruta protegida con useAuth()
+├── pages/                                ← carpeta NUEVA esta semana
+│   ├── HomePage.tsx                      ← NUEVO: lista de artículos publicados
+│   ├── DetallePage.tsx                   ← NUEVO: artículo individual por :slug
+│   ├── NotFound.tsx                      ← NUEVO: página 404
+│   └── admin/                            ← subcarpeta para el panel admin
+│       ├── AdminLogin.tsx                ← NUEVO: formulario de inicio de sesión
+│       └── AdminListado.tsx              ← NUEVO: tabla de artículos
+├── App.tsx                               ← ACTUALIZADO: BrowserRouter + Routes
+├── store/ ...                            (semana 5)
+├── context/ ...                          (semana 4)
+└── hooks/ ...                            (semana 3)
+```
+
+> **Regla de la capa de servicios:** Ningún componente llama a `fetch` directamente. Todo pasa por `src/services/articulosService.ts`. Si la URL de la API cambia (de `/api/articulos` a `/api/v1/articulos`), solo cambia el servicio.
+>
+> **Regla de páginas:** `src/pages/` — una página por ruta. Páginas del admin van en `src/pages/admin/`. Los componentes que solo se usan en una página van inline en esa página, no en `src/components/`.
+
+### Paso 0 — Crear la capa de servicios del frontend
+
+Antes de configurar las rutas, crea `articulosService.ts` — la única capa del frontend que llama a `fetch`. Esta es la regla más importante de la arquitectura del CMS: **ningún componente llama a `fetch` directamente**.
 
 ```bash
-npm install @tanstack/react-query
+# Variable de entorno en frontend/.env
+VITE_API_URL=http://localhost:3001/api/v1
 ```
-
-Envuelve la app con `QueryClientProvider` en `main.tsx`:
-
-```tsx
-// src/main.tsx
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { App } from "./App";
-
-const queryClient = new QueryClient({
-  defaultOptions: { queries: { staleTime: 1000 * 60 * 5 } }, // 5 min en caché
-});
-
-ReactDOM.createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <App />
-    </QueryClientProvider>
-  </React.StrictMode>
-);
-```
-
-Crea el servicio que encapsula todas las llamadas HTTP:
 
 ```typescript
 // src/services/articulosService.ts
-import type { Articulo, ApiResponse } from "@/types";
+import type { Articulo, ApiResponse } from '@/types'
 
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
+const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3001/api/v1'
 
-async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_URL}${url}`, {
-    headers: { "Content-Type": "application/json" },
-    ...options,
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}: ${url}`);
-  return res.json() as Promise<T>;
+async function fetchJSON<T>(url: string, init?: RequestInit, noCache = false): Promise<T> {
+  const res = await fetch(`${BASE}${url}`, {
+    headers: { 'Content-Type': 'application/json' },
+    cache: noCache ? 'no-store' : 'default',
+    ...init,
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.message ?? `HTTP ${res.status}`)
+  }
+  return res.json() as Promise<T>
 }
 
 export const articulosService = {
-  getAll: (params?: { estado?: string; busqueda?: string }) => {
+  getAll: (params?: { estado?: string; busqueda?: string }, noCache = false) => {
     const qs = params
       ? new URLSearchParams(params as Record<string, string>).toString()
-      : "";
-    return fetchJSON<ApiResponse<Articulo[]>>(`/api/articulos${qs ? `?${qs}` : ""}`);
+      : ''
+    return fetchJSON<ApiResponse<Articulo[]>>(
+      `/articulos${qs ? `?${qs}` : ''}`,
+      undefined,
+      noCache
+    )
   },
+
   getBySlug: (slug: string) =>
-    fetchJSON<ApiResponse<Articulo>>(`/api/articulos/${slug}`),
-};
+    fetchJSON<ApiResponse<Articulo>>(`/articulos/${slug}`),
+
+  // Construye la URL pública de una imagen
+  resolverImagen: (imagen: string | null | undefined): string => {
+    if (!imagen) return '/uploads/default-cover.svg'
+    if (imagen.startsWith('http') || imagen.startsWith('/')) return imagen
+    return `/uploads/${imagen}`
+  },
+}
 ```
 
-Esto significa que el frontend ya **no importa `mockData` para las páginas públicas** — todo pasa por la API. El servidor Express de S5 debe estar corriendo.
+El frontend ya **no importa `mockData` para las páginas públicas** — todo pasa por `articulosService`. El servidor Express de S5 debe estar corriendo.
 
 ### Paso 1 — Instalar y configurar React Router
 
@@ -324,45 +344,50 @@ export function ProtectedRoute() {
 }
 ```
 
-### Paso 3 — Página de detalle con `useParams` y `useQuery`
+### Paso 3 — Página de detalle con `useParams`
 
-Actualiza `DetallePage` para cargar el artículo desde la API en lugar del array mock:
+Actualiza `DetallePage` para cargar el artículo desde la API usando el `slug` de la URL:
 
 ```tsx
 // src/pages/DetallePage.tsx — conectada a la API
-import { useParams, Navigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { articulosService } from "@/services/articulosService";
-import { BarraProgreso } from "@/components/BarraProgreso";
-import { useProgresoLectura } from "@/hooks/useProgresoLectura";
+import { useParams, Navigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { articulosService } from '@/services/articulosService'
+import type { Articulo } from '@/types'
 
 export function DetallePage() {
-  const { slug } = useParams<{ slug: string }>();
-  const progreso = useProgresoLectura();
+  const { slug } = useParams<{ slug: string }>()
+  const [articulo, setArticulo] = useState<Articulo | null>(null)
+  const [cargando, setCargando] = useState(true)
+  const [noEncontrado, setNoEncontrado] = useState(false)
 
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ["articulo", slug],
-    queryFn: () => articulosService.getBySlug(slug!),
-    enabled: !!slug,
-  });
+  useEffect(() => {
+    if (!slug) return
+    let activo = true
+    articulosService.getBySlug(slug)
+      .then((res) => { if (activo) setArticulo(res.data) })
+      .catch(() => { if (activo) setNoEncontrado(true) })
+      .finally(() => { if (activo) setCargando(false) })
+    return () => { activo = false }
+  }, [slug])
 
-  if (isLoading) return <div className="loading">Cargando artículo...</div>;
-  if (isError || !data?.data) return <Navigate to="/404" replace />;
-
-  const articulo = data.data;
+  if (cargando) return <div className="loading">Cargando artículo...</div>
+  if (noEncontrado || !articulo) return <Navigate to="/404" replace />
 
   return (
-    <>
-      <BarraProgreso valor={progreso} />
-      <article>
-        <div className="article-hero" style={{ backgroundImage: `url(${articulo.imagen})` }}>
-          <h1>{articulo.titulo}</h1>
-        </div>
-        <div dangerouslySetInnerHTML={{ __html: articulo.contenido }} />
-      </article>
-    </>
-  );
+    <article>
+      <img
+        src={articulosService.resolverImagen(articulo.imagen)}
+        alt={articulo.titulo}
+        className="article-hero__img"
+        onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = '/uploads/default-cover.svg' }}
+      />
+      <h1>{articulo.titulo}</h1>
+      <div dangerouslySetInnerHTML={{ __html: articulo.contenido }} />
+    </article>
+  )
 }
+```
 ```
 
 ### Paso 4 — Formulario de login
@@ -416,7 +441,7 @@ export function AdminLogin() {
 }
 ```
 
-> **Para la próxima semana**: El frontend ya conecta al servidor Express — los datos viajan por HTTP. En la Semana 7 el único cambio será en el backend: el array en memoria se reemplaza por consultas reales a PostgreSQL, y la URL del `GET /api/articulos` seguirá siendo la misma.
+> **Para la próxima semana**: El frontend ya conecta al servidor Express a través de `articulosService`. En la Semana 7 el único cambio estará en el backend: el array mock se reemplaza por consultas reales a PostgreSQL con Prisma. La URL del `GET /api/v1/articulos` seguirá siendo la misma — el frontend no cambia.
 
 ---
 

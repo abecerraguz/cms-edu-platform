@@ -1,30 +1,30 @@
 ---
-titulo: "Backend CRUD completo con Express y multer"
-descripcion: "Endpoints POST, PUT y DELETE tipados con Express + PostgreSQL, arquitectura MVC y subida de archivos con multer."
+titulo: "Backend CRUD completo con Express y Prisma"
+descripcion: "Endpoints POST, PUT y DELETE tipados con Express + Prisma + PostgreSQL, arquitectura MVC de 4 capas y subida de archivos con multer."
 duracion: "8h"
 semana: 8
 objetivos:
   - "Implementar los endpoints POST, PUT y DELETE en Express con TypeScript"
-  - "Separar la lógica en controllers, models y routes (arquitectura MVC)"
-  - "Manejar errores de PostgreSQL de forma tipada (duplicados, FK violations)"
-  - "Configurar multer para recibir y guardar archivos de imagen"
-  - "Exponer un endpoint POST /api/upload con validación de MIME y tamaño"
+  - "Organizar el backend en 4 capas: routes → controllers → services → database"
+  - "Crear consultas Prisma tipadas para crear, actualizar y eliminar artículos"
+  - "Manejar errores de Prisma con PrismaClientKnownRequestError (P2002, P2025)"
+  - "Configurar multer para recibir imágenes y devolver el filename"
 recursos:
   - nombre: "Express.js - Routing"
     url: "https://expressjs.com/en/guide/routing.html"
   - nombre: "multer - npm"
     url: "https://github.com/expressjs/multer"
-  - nombre: "node-postgres (pg) - Queries"
-    url: "https://node-postgres.com/features/queries"
+  - nombre: "Prisma - CRUD Operations"
+    url: "https://www.prisma.io/docs/orm/prisma-client/queries/crud"
 ---
 
-> **🎯 Objetivo de la semana:** Al terminar tendrás una API REST completa — GET, POST, PUT, DELETE y upload de archivos — organizada en la arquitectura MVC y conectada a PostgreSQL. Cualquier cliente (el frontend React, Postman o `curl`) podrá crear, editar y eliminar artículos con o sin imagen.
+> **🎯 Objetivo de la semana:** Al terminar tendrás una API REST completa — GET, POST, PUT, DELETE y upload de archivos — organizada en arquitectura MVC de 4 capas con Prisma y conectada a PostgreSQL.
 >
-> **🔑 Concepto clave:** Arquitectura MVC en Express — separar responsabilidades en tres capas: la **ruta** solo recibe la petición HTTP y la despacha; el **controller** orquesta la lógica de negocio; el **model** ejecuta las consultas SQL. Cada capa es testeable de forma independiente.
+> **🔑 Concepto clave:** Arquitectura MVC de 4 capas en Express — `v1/routes/` (URL+verbo), `controllers/` (req/res + validación), `services/` (lógica de negocio), `database/` (consultas Prisma). Cada capa es testeable de forma independiente.
 >
-> **🛠 Tarea práctica:** Completar la API del CMS con los endpoints de escritura: `POST /api/articulos`, `PUT /api/articulos/:slug`, `DELETE /api/articulos/:id` y `POST /api/upload`. Reorganizar el backend con la arquitectura MVC.
+> **🛠 Tarea práctica:** Completar la API del CMS con los endpoints de escritura: `POST /api/v1/articulos`, `PUT /api/v1/articulos/:slug`, `DELETE /api/v1/articulos/:id` y `POST /api/v1/upload`. Crear `ApiError`, `sendSuccess`/`sendError` y el middleware `errorHandler`.
 >
-> **📋 Entregable:** Desde Postman o Thunder Client puedes crear un artículo con imagen, editarlo, cambiarle la foto y eliminarlo. El backend responde con los códigos HTTP correctos (201, 200, 204, 400, 404, 409) y los errores descriptivos.
+> **📋 Entregable:** Desde Postman puedes crear un artículo con imagen, editarlo y eliminarlo. El backend responde con los códigos HTTP correctos (201, 200, 204, 400, 404, 409) y el formato `{ status, code, message, data }`.
 
 ---
 
@@ -34,109 +34,161 @@ En las semanas anteriores pusiste las consultas SQL directamente dentro de las r
 
 ```
 src/
-├── routes/
-│   └── articulos.routes.ts     ← solo define qué verbo HTTP llama a qué controller
+├── v1/routes/
+│   └── articulos.ts        ← conecta URL + verbo con el controller
 ├── controllers/
-│   └── articulos.controller.ts ← recibe req/res, valida input, llama al model
-├── models/
-│   └── articulos.model.ts      ← ejecuta SQL, devuelve datos tipados
-└── middleware/
-    └── upload.ts               ← configuración de multer
+│   └── articulosController.ts  ← valida input, llama al service, responde
+├── services/
+│   └── articulosService.ts     ← lógica de negocio (slug, reglas)
+├── database/
+│   └── articuloQueries.ts      ← consultas Prisma tipadas
+├── middlewares/
+│   ├── upload.ts               ← configuración de multer
+│   └── errorHandler.ts         ← convierte ApiError/PrismaError a HTTP
+└── utils/
+    ├── ApiError.ts             ← error de negocio con statusCode
+    └── apiResponse.ts          ← sendSuccess() y sendError()
 ```
 
-La ventaja práctica: si mañana cambias de `pg` a Prisma, solo modificas los models — las rutas y controllers no cambian. Si cambias la lógica de negocio, solo cambias el controller.
+La ventaja práctica: si mañana cambias la lógica de negocio, solo cambias `services/`. Si cambias la base de datos, solo cambias `database/`. Las rutas y controllers no tocan.
 
-### El modelo: consultas SQL tipadas
+### Utilidades: ApiError y sendSuccess/sendError
+
+Antes de implementar los endpoints, necesitas los bloques de construcción que garantizan respuestas consistentes:
 
 ```typescript
-// src/models/articulos.model.ts
-import { pool } from "../db/pool";
-import type { Articulo, NuevoArticulo, ActualizarArticulo } from "../types";
+// src/utils/ApiError.ts
+export class ApiError extends Error {
+  statusCode: number
+  details: unknown
 
-// Genera un slug URL-safe desde un título
+  constructor(statusCode: number, message: string, details: unknown = null) {
+    super(message)
+    this.name = 'ApiError'
+    this.statusCode = statusCode
+    this.details = details
+  }
+}
+```
+
+```typescript
+// src/utils/apiResponse.ts
+import type { Response } from 'express'
+
+export const sendSuccess = ({
+  res, statusCode = 200, message = 'Operación exitosa', data = null, meta = undefined,
+}: { res: Response; statusCode?: number; message?: string; data?: unknown; meta?: unknown }) => {
+  return res.status(statusCode).json({ status: 'success', code: statusCode, message, data, ...(meta ? { meta } : {}) })
+}
+
+export const sendError = ({
+  res, statusCode = 500, message = 'Error interno',
+}: { res: Response; statusCode?: number; message?: string }) => {
+  return res.status(statusCode).json({ status: 'error', code: statusCode, message })
+}
+```
+
+### La capa database: consultas Prisma tipadas
+
+```typescript
+// src/database/articuloQueries.ts
+import { prisma } from '../config/db'
+import { ApiError } from '../utils/ApiError'
+import type { EstadoArticulo } from '../generated/prisma/client'
+
 function generarSlug(titulo: string): string {
-  return titulo
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")   // quitar tildes
-    .replace(/[^a-z0-9\s-]/g, "")
-    .trim()
-    .replace(/\s+/g, "-");
+  return titulo.toLowerCase().normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s-]/g, '').trim().replace(/\s+/g, '-')
 }
 
-export async function insertarArticulo(datos: NuevoArticulo): Promise<Articulo> {
-  const slug = generarSlug(datos.titulo);
-  const { rows } = await pool.query<Articulo>(
-    `INSERT INTO articulos
-       (titulo, slug, extracto, contenido, imagen, categoria_id, estado, autor)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-     RETURNING *`,
-    [datos.titulo, slug, datos.extracto ?? null, datos.contenido ?? null,
-     datos.imagen ?? null, datos.categoria_id, datos.estado ?? "borrador",
-     datos.autor ?? "Administrador"]
-  );
-  return rows[0];
+export const articuloQueries = {
+  crear: async (datos: { titulo: string; extracto?: string; contenido?: string;
+                          imagen?: string; categoriaId: number; estado?: EstadoArticulo; autor?: string }) => {
+    const slug = generarSlug(datos.titulo)
+    return await prisma.articulo.create({
+      data: { ...datos, slug, estado: datos.estado ?? 'borrador', autor: datos.autor ?? 'Administrador' },
+      include: { categoria: true },
+    })
+  },
+
+  actualizar: async (slug: string, cambios: Partial<{ titulo: string; extracto: string;
+                                                       contenido: string; imagen: string;
+                                                       categoriaId: number; estado: EstadoArticulo }>) => {
+    return await prisma.articulo.update({
+      where: { slug },
+      data: cambios,
+      include: { categoria: true },
+    })
+  },
+
+  eliminar: async (id: number) => {
+    return await prisma.articulo.delete({ where: { id } })
+  },
 }
+```
 
-export async function actualizarArticulo(
-  slug: string,
-  campos: ActualizarArticulo
-): Promise<Articulo | null> {
-  // Construir el SET dinámico: solo los campos que vienen en el body
-  const keys = Object.keys(campos).filter(
-    (k) => campos[k as keyof ActualizarArticulo] !== undefined
-  );
-  if (!keys.length) throw new Error("No hay campos para actualizar");
+**Manejo de errores de Prisma:** cuando una operación viola una restricción de la base de datos, Prisma lanza `PrismaClientKnownRequestError` con un código específico. El middleware `errorHandler` convierte esos códigos a respuestas HTTP correctas:
 
-  const sets = keys.map((k, i) => `${k} = $${i + 1}`).join(", ");
-  const values = keys.map((k) => campos[k as keyof ActualizarArticulo]);
+```typescript
+// src/middlewares/errorHandler.ts
+import { PrismaClientKnownRequestError } from '../generated/prisma/runtime/library'
+import { ApiError } from '../utils/ApiError'
 
-  const { rows } = await pool.query<Articulo>(
-    `UPDATE articulos SET ${sets}, updated_at = NOW()
-     WHERE slug = $${keys.length + 1}
-     RETURNING *`,
-    [...values, slug]
-  );
-  return rows[0] ?? null;
-}
-
-export async function eliminarArticulo(id: number): Promise<boolean> {
-  const { rowCount } = await pool.query(
-    "DELETE FROM articulos WHERE id = $1",
-    [id]
-  );
-  return (rowCount ?? 0) > 0;
+export function errorHandler(err: unknown, req: Request, res: Response, _next: NextFunction) {
+  if (err instanceof ApiError) {
+    return res.status(err.statusCode).json({ status: 'error', code: err.statusCode, message: err.message })
+  }
+  if (err instanceof PrismaClientKnownRequestError) {
+    if (err.code === 'P2002') // slug duplicado
+      return res.status(409).json({ status: 'error', code: 409, message: 'Ya existe un artículo con ese slug' })
+    if (err.code === 'P2025') // no encontrado en update/delete
+      return res.status(404).json({ status: 'error', code: 404, message: 'Artículo no encontrado' })
+    if (err.code === 'P2003') // categoriaId inexistente
+      return res.status(400).json({ status: 'error', code: 400, message: 'La categoría indicada no existe' })
+  }
+  return res.status(500).json({ status: 'error', code: 500, message: 'Error interno del servidor' })
 }
 ```
 
 ### El controller: validación y respuesta HTTP
 
 ```typescript
-// src/controllers/articulos.controller.ts
-import type { Request, Response, NextFunction } from "express";
-import * as articulosModel from "../models/articulos.model";
+// src/controllers/articulosController.ts
+import type { Request, Response, NextFunction } from 'express'
+import { articulosService } from '../services/articulosService'
+import { sendSuccess, sendError } from '../utils/apiResponse'
 
-export async function crear(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { titulo, extracto, contenido, imagen, categoria_id, estado, autor } = req.body;
+export const articulosController = {
+  crear: async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { titulo, extracto, contenido, imagen, categoriaId, estado, autor } = req.body
 
-    // Validación en la frontera del sistema
-    if (!titulo || !categoria_id) {
-      return res.status(400).json({ error: "titulo y categoria_id son obligatorios" });
-    }
+      // Validación en la frontera del sistema
+      if (!titulo || !categoriaId) {
+        return sendError({ res, statusCode: 400, message: 'titulo y categoriaId son obligatorios' })
+      }
 
-    const articulo = await articulosModel.insertarArticulo(
-      { titulo, extracto, contenido, imagen, categoria_id, estado, autor }
-    );
-    res.status(201).json({ data: articulo, status: 201 });
-  } catch (e) { next(e); }
+      const articulo = await articulosService.crear({ titulo, extracto, contenido, imagen, categoriaId, estado, autor })
+      return sendSuccess({ res, statusCode: 201, message: 'Artículo creado.', data: articulo })
+    } catch (error) { return next(error) }
+  },
+
+  actualizar: async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const articulo = await articulosService.actualizar(String(req.params.slug), req.body)
+      return sendSuccess({ res, message: 'Artículo actualizado.', data: articulo })
+    } catch (error) { return next(error) }
+  },
+
+  eliminar: async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      await articulosService.eliminar(Number(req.params.id))
+      return res.status(204).send()
+    } catch (error) { return next(error) }
+  },
 }
-
-export async function actualizar(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { slug } = req.params;
-    const articulo = await articulosModel.actualizarArticulo(slug, req.body);
-    if (!articulo) return res.status(404).json({ error: "Artículo no encontrado" });
+```
     res.json({ data: articulo, status: 200 });
   } catch (e) { next(e); }
 }
@@ -392,6 +444,38 @@ Configurar multer y `POST /api/upload`. Probar con Postman en modo `form-data`: 
 
 ## 🛠 Proyecto CMS — Semana 8: API CRUD completa + subida de imágenes
 
+### 📁 Archivos de esta semana
+
+```
+backend/src/
+├── v1/
+│   └── routes/
+│       └── articulos.ts                ← NUEVO: rutas versionadas /api/v1/articulos
+├── controllers/
+│   └── articulosController.ts          ← NUEVO: valida input, llama al service
+├── services/
+│   └── articulosService.ts             ← NUEVO: lógica de negocio (generarSlug...)
+├── database/
+│   └── articuloQueries.ts              ← NUEVO: consultas Prisma tipadas (CRUD)
+├── middlewares/
+│   ├── upload.ts                       ← NUEVO: multer → guarda en frontend/public/uploads/
+│   ├── errorHandler.ts                 ← NUEVO: ApiError + Prisma errors → HTTP
+│   ├── cacheHeaders.ts                 ← NUEVO: Cache-Control para GET
+│   └── requestInfo.ts                  ← NUEVO: log de peticiones (opcional)
+├── utils/
+│   ├── ApiError.ts                     ← NUEVO: error de negocio con statusCode
+│   └── apiResponse.ts                  ← NUEVO: sendSuccess() y sendError()
+├── config/
+│   └── db.ts                           (semana 7)
+└── app.ts                              ← ACTUALIZADO: registra rutas MVC + errorHandler
+```
+
+> **Flujo de una petición:** `Request → v1/routes/ → controllers/ → services/ → database/ → PostgreSQL`
+>
+> **Regla de respuestas:** Usa siempre `sendSuccess()` y `sendError()` — nunca `res.json()` directo. Formato garantizado: `{ status, code, message, data }`.
+>
+> **Upload de imágenes:** las imágenes se guardan en `frontend/public/uploads/`. Configura multer con `dest: path.join(...)` apuntando a esa carpeta. El endpoint devuelve solo el `filename`, no la URL completa — `resolverImagen()` en el frontend construye la URL.
+
 ### Paso 1 — Reorganizar en MVC
 
 ```
@@ -457,7 +541,7 @@ curl -X POST http://localhost:3001/api/upload \
   -F "imagen=@/ruta/a/tu/foto.jpg"
 ```
 
-> **Para la próxima semana (Semana 9)**: Con la API completa, en la Semana 9 conectarás el panel admin del frontend a estas rutas — formularios de creación y edición wired a la API, subida de imágenes desde el navegador y gestión del ciclo de escritura con `useMutation` de TanStack Query.
+> **Para la próxima semana (Semana 9)**: Con la API completa, en la Semana 9 conectarás el panel admin del frontend a estas rutas — formularios de creación y edición conectados a la API, subida de imágenes desde el navegador, confirmación con SweetAlert2 y sincronización del store Zustand.
 
 ---
 

@@ -16,13 +16,17 @@ recursos:
     url: "https://react.dev/reference/react/forwardRef"
 ---
 
-> **🎯 Objetivo de la semana:** Al terminar sabrás crear contextos tipados con TypeScript para compartir estado global sin props drilling, memoizar componentes para evitar re-renders innecesarios y componer interfaces flexibles con Compound Components y `forwardRef`.
+> **🎯 Objetivo de la semana:** Al terminar sabrás crear contextos tipados con TypeScript para compartir estado global sin props drilling e integrar `TemaContext` y `AuthContext` como canal de comunicación entre componentes no relacionados directamente.
 >
 > **🔑 Concepto clave:** Context API — cuando múltiples componentes sin relación directa necesitan el mismo dato, Context crea un canal directo que evita pasar props nivel por nivel a través de componentes intermedios que no los usan.
 >
-> **🛠 Tarea práctica:** Crear `TemaContext` (tema oscuro/claro que persiste en `localStorage`), `AuthContext` (login simulado) y el formulario `NuevoArticulo` con `useReducer` para el panel admin del blog.
+> **🛠 Tarea práctica:** Implementar los dos contextos del CMS:
+> - `TemaContext` — tema oscuro/claro que persiste en `localStorage`, con hook `useTema()`
+> - `AuthContext` — login simulado contra credenciales hardcodeadas, con hook `useAuth()`
 >
-> **📋 Entregable:** Tu app muestra: (1) toggle de tema oscuro/claro funcional, (2) formulario de nueva publicación con validación, (3) el panel admin solo accesible tras iniciar sesión.
+> Integrar ambos providers en `main.tsx` y proteger `/admin` con `useAuth()`.
+>
+> **📋 Entregable:** (1) toggle de tema oscuro/claro funcional que sobrevive a una recarga, (2) el panel admin solo accesible después de iniciar sesión — cualquier intento directo por URL redirige a `/admin/login`.
 
 ---
 
@@ -276,6 +280,20 @@ Crear un componente `FormInput` con soporte para `ref`, `label` y `error`. Usarl
 ## 🛠 Proyecto CMS — Semana 4: Formulario con useReducer, tema oscuro y contexto de autenticación
 
 Esta semana añades la infraestructura de estado que necesitarás para el panel admin: el formulario de nueva publicación con `useReducer`, el modo oscuro/claro con contexto, y el contexto de autenticación para proteger las rutas admin.
+
+### 📁 Archivos de esta semana
+
+```
+frontend/src/
+├── hooks/
+│   └── useFormularioArticulo.ts        (semana 3 — se reutiliza aquí)
+├── components/ ...                     (semana 2)
+└── context/                            ← carpeta NUEVA esta semana
+    ├── TemaContext.tsx                 ← NUEVO: dark/light mode + localStorage
+    └── AuthContext.tsx                 ← NUEVO: login simulado + protección admin
+```
+
+> **Regla de Context:** Cada archivo de contexto exporta tres cosas: el `Provider`, el hook consumidor (`useTema`, `useAuth`) y el tipo del contexto. Nunca uses `useContext(MiContexto)` directamente en un componente — siempre a través del hook personalizado, que lanza un error descriptivo si se usa fuera del Provider.
 
 ### Paso 1 — `useReducer` para el formulario de nueva publicación
 

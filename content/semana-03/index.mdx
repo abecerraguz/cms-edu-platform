@@ -1,14 +1,14 @@
 ---
 titulo: "Hooks con TypeScript"
-descripcion: "useState, useEffect, useRef, useMemo y useCallback completamente tipados con TypeScript."
+descripcion: "useState, useEffect, useMemo y useReducer completamente tipados para construir los tres custom hooks del CMS."
 duracion: "8h"
 semana: 3
 objetivos:
   - "Usar useState con tipado explícito e inferido correctamente"
   - "Tipar los efectos secundarios con useEffect y sus dependencias"
-  - "Referenciar elementos del DOM con useRef tipado"
-  - "Optimizar rendimiento con useMemo y useCallback tipados"
-  - "Crear hooks personalizados (custom hooks) con TypeScript"
+  - "Crear hooks personalizados (custom hooks) con sus propios tipos de retorno"
+  - "Aplicar useReducer con discriminated unions para manejar formularios complejos"
+  - "Optimizar datos derivados con useMemo"
 recursos:
   - nombre: "React Hooks API Reference"
     url: "https://react.dev/reference/react"
@@ -16,13 +16,16 @@ recursos:
     url: "https://usehooks.com/"
 ---
 
-> **🎯 Objetivo de la semana:** Al terminar sabrás usar `useState`, `useEffect`, `useRef`, `useMemo` y `useCallback` completamente tipados, y crear custom hooks que encapsulan lógica reutilizable con sus propios tipos de retorno.
+> **🎯 Objetivo de la semana:** Al terminar sabrás usar `useState`, `useEffect`, `useMemo` y `useReducer` completamente tipados, y tendrás los tres custom hooks reales del CMS implementados y conectados a sus consumidores.
 >
-> **🔑 Concepto clave:** Hooks como primitivas de composición — cada hook hace una sola cosa bien. Componerlos en un custom hook reutilizable es la diferencia entre lógica duplicada en cada componente y lógica compartida con un import.
+> **🔑 Concepto clave:** Hooks como primitivas de composición — cada hook hace una sola cosa bien. `usePublicaciones` encapsula la carga de datos, `useArticulosFiltrados` encapsula el cálculo derivado, `useFormularioArticulo` encapsula el estado del formulario. Los componentes solo los consumen.
 >
-> **🛠 Tarea práctica:** Crear los hooks del CMS: `usePublicaciones` (listado + búsqueda), `useProgresoLectura` (porcentaje de scroll de la página) y `useAdminPublicaciones` (CRUD local con filtros).
+> **🛠 Tarea práctica:** Crear los tres custom hooks del CMS:
+> - `usePublicaciones` — carga artículos publicados con `useState` + `useEffect` + el servicio mock
+> - `useArticulosFiltrados` — filtra por búsqueda y estado usando `useMemo` (conecta con el store Zustand en S5)
+> - `useFormularioArticulo` — gestiona el formulario de 4 campos con `useReducer` y discriminated unions
 >
-> **📋 Entregable:** Los 3 hooks tipados pasan la verificación TypeScript. `useProgresoLectura` actualiza la barra de progreso al hacer scroll. `useAdminPublicaciones` filtra la tabla en tiempo real al escribir en el input de búsqueda.
+> **📋 Entregable:** Los 3 hooks tipados compilan sin errores. `useFormularioArticulo` expone `campos`, `setCampo`, `reset` y `esValido`. `usePublicaciones` devuelve `{ articulos, cargando, error }` con cleanup de efecto para evitar actualizaciones en componente desmontado.
 
 ---
 
@@ -424,11 +427,26 @@ Extrae la lógica de fetch de la Actividad 2 en un hook genérico `useFetch<T>(u
 
 Esta semana los hooks dejan de ser ejercicios académicos y se convierten en código real del CMS. Hay tres piezas:
 
-1. **Página pública (`HomePage`)**: simular la carga asíncrona de artículos (en semana 7 reemplazarás la simulación por una llamada real a Express).
-2. **Detalle de artículo (`DetallePage`)**: implementar la barra de progreso de lectura que ya existe en `detalle.html` como `.reading-progress`.
-3. **Panel admin (`AdminListado`)**: añadir el buscador `#tableSearch` de `admin_listado.html` con filtrado en tiempo real.
+1. **Página pública (`HomePage`)**: carga asíncrona de artículos desde el servicio mock.
+2. **Formulario del admin (`NuevoArticulo`)**: gestión de 4 campos con `useReducer` y discriminated unions.
+3. **Listado del admin (`AdminListado`)**: filtrado de artículos con `useMemo` sobre el store Zustand.
 
-> **Importante**: La página pública (`index.html`) **no tiene buscador** — es solo un grid de tarjetas. El único buscador de la plantilla vive en el panel admin. No añadas búsqueda a `HomePage`.
+### 📁 Archivos de esta semana
+
+```
+frontend/src/
+├── types/
+│   └── index.ts                        (semana 1)
+├── data/
+│   └── mockData.ts                     (semana 2)
+├── components/ ...                     (semana 2)
+└── hooks/                              ← carpeta NUEVA esta semana
+    ├── usePublicaciones.ts             ← NUEVO: carga artículos (useState + useEffect)
+    ├── useFormularioArticulo.ts        ← NUEVO: estado del form (useReducer)
+    └── useArticulosFiltrados.ts        ← NUEVO: filtrado derivado (useMemo)
+```
+
+> **Regla de hooks:** Siempre van en `src/hooks/`. Nombre: `useNombreDescriptivo.ts` — camelCase con prefijo `use`, extensión `.ts` (no `.tsx` a menos que el hook retorne JSX). Nunca crees un hook dentro de un componente o página.
 
 ---
 
@@ -533,256 +551,122 @@ export function HomePage() {
 
 ---
 
-### Paso 2 — Barra de progreso de lectura en `DetallePage`
+### Paso 2 — Formulario del admin: hook `useFormularioArticulo`
 
-La plantilla `detalle.html` tiene este elemento justo al inicio del `<body>`:
-
-```html
-<div class="reading-progress" id="readingProgress"
-     role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"
-     aria-label="Progreso de lectura"></div>
-```
-
-El CSS en `main.css` ya lo posiciona como barra fija. Solo falta el JS que actualiza su ancho al hacer scroll. Eso es exactamente lo que hace `useEffect` con un event listener — y la función de limpieza que devuelve es el `removeEventListener`.
-
-Crea `src/hooks/useProgresoLectura.ts`:
+El formulario de nuevo artículo tiene 4 campos relacionados: `titulo`, `extracto`, `contenido` e `imagen`. Con 4 `useState` separados tendrías 4 setters distintos y la lógica de reset esparcida. `useReducer` centraliza todo en un reducer con acciones tipadas como discriminated unions:
 
 ```ts
-// src/hooks/useProgresoLectura.ts
-import { useState, useEffect } from "react";
+// src/hooks/useFormularioArticulo.ts
+import { useReducer } from 'react'
 
-export function useProgresoLectura(): number {
-  const [progreso, setProgreso] = useState(0);
+interface CamposFormulario {
+  titulo: string
+  extracto: string
+  contenido: string
+  imagen: string
+}
 
-  useEffect(() => {
-    function calcularProgreso() {
-      const scrollTop = window.scrollY;
-      const docHeight = document.documentElement.scrollHeight - window.innerHeight;
-      const porcentaje = docHeight > 0 ? Math.round((scrollTop / docHeight) * 100) : 0;
-      setProgreso(porcentaje);
-    }
+type AccionFormulario =
+  | { type: 'SET_CAMPO'; campo: keyof CamposFormulario; valor: string }
+  | { type: 'RESET' }
 
-    window.addEventListener("scroll", calcularProgreso, { passive: true });
+const estadoInicial: CamposFormulario = {
+  titulo: '', extracto: '', contenido: '', imagen: ''
+}
 
-    // CLEANUP — se ejecuta cuando el componente desmonta
-    // Si no lo hicieras, el listener quedaría registrado para siempre
-    return () => window.removeEventListener("scroll", calcularProgreso);
-  }, []); // [] = registra una vez al montar, limpia al desmontar
+function reducirFormulario(state: CamposFormulario, accion: AccionFormulario): CamposFormulario {
+  switch (accion.type) {
+    case 'SET_CAMPO': return { ...state, [accion.campo]: accion.valor }
+    case 'RESET':     return estadoInicial
+    default:          return state
+  }
+}
 
-  return progreso;
+export function useFormularioArticulo() {
+  const [campos, dispatch] = useReducer(reducirFormulario, estadoInicial)
+
+  const setCampo = (campo: keyof CamposFormulario, valor: string) =>
+    dispatch({ type: 'SET_CAMPO', campo, valor })
+
+  const reset = () => dispatch({ type: 'RESET' })
+
+  // Validación mínima: título de al menos 3 caracteres
+  const esValido = campos.titulo.trim().length >= 3
+
+  return { campos, setCampo, reset, esValido }
 }
 ```
 
-Usa el hook en `src/pages/DetallePage.tsx`:
+La ventaja de `keyof CamposFormulario` en el tipo de `campo` es que TypeScript rechaza en compilación cualquier campo que no exista en la interfaz. Si renombras un campo, el compilador te indica todos los puntos que hay que actualizar.
+
+Uso en `src/pages/admin/NuevoArticulo.tsx`:
 
 ```tsx
-// src/pages/DetallePage.tsx
-import { useProgresoLectura } from "@/hooks/useProgresoLectura";
-import type { Articulo } from "@/types";
+import { useFormularioArticulo } from '@/hooks/useFormularioArticulo'
 
-interface DetallePageProps {
-  articulo: Articulo;
-}
+export function NuevoArticulo() {
+  const { campos, setCampo, reset, esValido } = useFormularioArticulo()
 
-export function DetallePage({ articulo }: DetallePageProps) {
-  const progreso = useProgresoLectura();
+  const handleSubmit = (e: React.BaseSyntheticEvent) => {
+    e.preventDefault()
+    if (!esValido) return
+    console.log('Enviar:', campos)
+    reset()
+  }
 
   return (
-    <>
-      {/* Barra fija en el top — replica .reading-progress de detalle.html */}
-      <div
-        className="reading-progress"
-        role="progressbar"
-        aria-valuenow={progreso}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-label="Progreso de lectura"
-        style={{ width: `${progreso}%` }}
+    <form onSubmit={handleSubmit}>
+      <input
+        value={campos.titulo}
+        onChange={(e) => setCampo('titulo', e.target.value)}
+        placeholder="Título del artículo"
       />
-
-      <div className="article-hero">
-        <img
-          src={articulo.imagen}
-          alt={articulo.titulo}
-          className="article-hero__img"
-        />
-        <div className="article-hero__overlay" />
-        <div className="article-hero__content">
-          <div className="container">
-            <span className="article-hero__category">{articulo.categoria.nombre}</span>
-            <h1 className="article-hero__title">{articulo.titulo}</h1>
-            <div className="article-hero__meta">
-              <span><i className="bi bi-calendar3" /> {articulo.fecha}</span>
-              <span><i className="bi bi-person" /> {articulo.autor}</span>
-              <span><i className="bi bi-clock" /> {articulo.tiempoLectura} min de lectura</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <main className="article-page">
-        <div className="container">
-          <div
-            className="article-content"
-            dangerouslySetInnerHTML={{ __html: articulo.contenido }}
-          />
-        </div>
-      </main>
-    </>
-  );
+      <textarea
+        value={campos.extracto}
+        onChange={(e) => setCampo('extracto', e.target.value)}
+        placeholder="Extracto"
+      />
+      <button type="submit" disabled={!esValido}>Guardar</button>
+      <button type="button" onClick={reset}>Limpiar</button>
+    </form>
+  )
 }
 ```
 
 ---
 
-### Paso 3 — Búsqueda admin: hook `useAdminPublicaciones`
+### Paso 3 — Filtrado del admin: hook `useArticulosFiltrados`
 
-En `admin_listado.html` el buscador `#tableSearch` filtra la tabla en tiempo real. En React, ese patrón es `useState` (para el término) + `useMemo` (para la lista filtrada), todo encapsulado en un custom hook.
+El listado del admin necesita filtrar por texto de búsqueda y por estado del artículo. Este cálculo es **derivado** — depende de otros datos, no es estado propio. `useMemo` recalcula solo cuando cambian sus dependencias, evitando recorridos innecesarios en cada render.
+
+Este hook leerá del store Zustand que crearás en la Semana 5. Por ahora impleméntalo con datos mock para que compile:
 
 ```ts
-// src/hooks/useAdminPublicaciones.ts
-import { useState, useMemo, useCallback } from "react";
-import type { Articulo } from "@/types";
-import { ARTICULOS_MOCK } from "@/data/mockData";
+// src/hooks/useArticulosFiltrados.ts
+import { useMemo } from 'react'
+import type { Articulo, EstadoArticulo } from '@/types'
 
-interface UseAdminPublicaciones {
-  articulos: Articulo[];
-  busqueda: string;
-  totalFiltrados: number;
-  buscar: (termino: string) => void;
-}
+// En S5 esto leerá del store Zustand: useArticulosStore(state => state.articulos)
+export function useArticulosFiltrados(
+  articulos: Articulo[],
+  busqueda: string,
+  filtroEstado: EstadoArticulo | 'todos'
+) {
+  return useMemo(() => {
+    return articulos.filter((a) => {
+      const coincideBusqueda = a.titulo
+        .toLowerCase()
+        .includes(busqueda.toLowerCase())
 
-export function useAdminPublicaciones(): UseAdminPublicaciones {
-  const [busqueda, setBusqueda] = useState("");
+      const coincideEstado =
+        filtroEstado === 'todos' || a.estado === filtroEstado
 
-  // useMemo recalcula solo cuando cambia busqueda o los datos base
-  const articulos = useMemo(() => {
-    const termino = busqueda.toLowerCase().trim();
-    if (!termino) return ARTICULOS_MOCK;
-    return ARTICULOS_MOCK.filter(
-      (a) =>
-        a.titulo.toLowerCase().includes(termino) ||
-        a.categoria.nombre.toLowerCase().includes(termino)
-    );
-  }, [busqueda]);
-
-  // useCallback estabiliza la referencia para evitar renders innecesarios
-  const buscar = useCallback((termino: string) => {
-    setBusqueda(termino);
-  }, []);
-
-  return { articulos, busqueda, totalFiltrados: articulos.length, buscar };
+      return coincideBusqueda && coincideEstado
+    })
+  }, [articulos, busqueda, filtroEstado])
 }
 ```
 
-Úsalo en `src/pages/admin/AdminListado.tsx`:
-
-```tsx
-// src/pages/admin/AdminListado.tsx
-import { useAdminPublicaciones } from "@/hooks/useAdminPublicaciones";
-import type { Articulo } from "@/types";
-
-export function AdminListado() {
-  const { articulos, busqueda, totalFiltrados, buscar } = useAdminPublicaciones();
-
-  return (
-    <main className="admin-page">
-      <div className="container">
-
-        <div className="admin-header">
-          <div className="admin-header__info">
-            <h1><i className="bi bi-grid-1x2" /> Publicaciones</h1>
-            <p>Desde aquí gestiona el contenido de tu blog.</p>
-          </div>
-          <a href="/admin/nueva" className="btn btn--success">
-            <i className="bi bi-plus-circle" /> Nueva publicación
-          </a>
-        </div>
-
-        {/* Stats — valores derivados del array en memoria */}
-        <div className="admin-stats">
-          <div className="admin-stat">
-            <div className="admin-stat__icon admin-stat__icon--blue">
-              <i className="bi bi-file-earmark-text" />
-            </div>
-            <div className="admin-stat__info">
-              <span className="admin-stat__value">{totalFiltrados}</span>
-              <span className="admin-stat__label">
-                {busqueda ? "Resultados" : "Total artículos"}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <div className="admin-table">
-          <div className="admin-table__header">
-            <div className="admin-table__title-wrap">
-              <h2 className="admin-table__title">
-                <i className="bi bi-list-ul" /> Lista de Publicaciones
-              </h2>
-              <span className="admin-table__count">{totalFiltrados} artículos</span>
-            </div>
-
-            {/* Replica #tableSearch de admin_listado.html */}
-            <div className="admin-table__search">
-              <i className="bi bi-search" />
-              <input
-                type="search"
-                id="tableSearch"
-                value={busqueda}
-                onChange={(e) => buscar(e.target.value)}
-                placeholder="Buscar publicación..."
-                aria-label="Buscar publicación"
-              />
-            </div>
-          </div>
-
-          <div className="admin-table__wrap">
-            <table id="postsTable">
-              <thead>
-                <tr>
-                  <th style={{ width: 56 }}><i className="bi bi-image" /></th>
-                  <th><i className="bi bi-card-text" /> Título</th>
-                  <th style={{ width: 120 }}><i className="bi bi-tag" /> Categoría</th>
-                  <th style={{ width: 110 }}><i className="bi bi-calendar3" /> Fecha</th>
-                  <th style={{ width: 160 }}><i className="bi bi-gear" /> Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {articulos.map((a: Articulo) => (
-                  <tr key={a.id}>
-                    <td>
-                      <img src={a.imagen} alt="" className="td-thumb" />
-                    </td>
-                    <td><span className="td-title">{a.titulo}</span></td>
-                    <td>
-                      <span className={`td-badge td-badge--${a.categoria.slug}`}>
-                        {a.categoria.nombre}
-                      </span>
-                    </td>
-                    <td className="td-date">{a.fecha}</td>
-                    <td className="td-actions">
-                      <a href={`/${a.slug}`} className="btn-action btn-action--view" title="Ver">
-                        <i className="bi bi-eye" />
-                      </a>
-                      <a href={`/admin/editar/${a.id}`} className="btn-action btn-action--edit" title="Editar">
-                        <i className="bi bi-pencil" />
-                      </a>
-                      <button className="btn-action btn-action--delete" title="Eliminar">
-                        <i className="bi bi-trash" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-      </div>
-    </main>
-  );
-}
-```
-
-> **En la Semana 7** el `useEffect` de `usePublicaciones` se reemplazará por `fetch('/api/articulos')` real hacia tu Express + PostgreSQL. El `useAdminPublicaciones` también pasará a llamar la API. La arquitectura que estás construyendo ahora anticipa exactamente ese momento.
+> **En la Semana 5**, cuando crees el store Zustand, `useArticulosFiltrados` se simplificará: leerá `articulos`, `busqueda` y `filtroEstado` directamente del store. El cálculo con `useMemo` no cambia.
+>
+> **En la Semana 7**, el `useEffect` de `usePublicaciones` reemplazará el mock por `articulosService.getAll()` real hacia Express + PostgreSQL. La arquitectura que estás construyendo ahora anticipa exactamente ese momento.
